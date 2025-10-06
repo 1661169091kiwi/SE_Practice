@@ -27,7 +27,7 @@ func (ns *noteService) SummarizeNote(textContent, imageBase64 string) (string, e
 		gptContent = []map[string]interface{}{
 			{
 				"type": "text",
-				"text": "请结合以下文字和图片内容，进行总结：\n" + textContent,
+				"text": "请结合以下文字和图片内容，进行总结，形成一份结构完整、条理清晰的笔记整理结果。同时根据全文类容生成标签，并且以#tag 的形式附在全文开头。比如#机器学习#决策树。然后才是整理内容。：\n" + textContent,
 			},
 			{
 				"type": "image_url",
