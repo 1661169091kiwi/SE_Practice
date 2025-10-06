@@ -22,7 +22,7 @@ func main() {
 	db.AutoMigrate(&model.Note{}, &model.User{}, &model.Collection{}, &model.Tag{})
 
 	//API
-	gptClient := util.NewGPTClient("sk-gLJpO9I10cMfjn0PYz80SSwELl84fmTyKjhYlMUwkyANTfpf")
+	gptClient := util.NewGPTClient("sk-gLJpmTyKjhYlMUwkyANTfpf")
 
 	//note Service和Controller
 	noteService := service.NewNoteService(gptClient)

@@ -19,7 +19,7 @@ func imageToBase64(path string) (string, error) {
 
 // TestGPTClient_CallGPT_LocalImage 测试文本+本地图片输入
 func TestGPTClient_CallGPT_LocalImage(t *testing.T) {
-	apiKey := "sk-gLJpO9I10cMfjn0PYz80SSwELl84fmTyKjhYlMUwkyANTfpf"
+	apiKey := "sk-gLJpO9IELl84fmTyKjhYlMUwkyANTfpf"
 	if apiKey == "" {
 		t.Fatal("API Key 不能为空！")
 	}
