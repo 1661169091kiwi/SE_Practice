@@ -20,6 +20,8 @@ SE_Practice/
 │  │  │  ├─ user_service.go
 │  │  │  ├─ event_service.go
 │  │  │  └─ match_service.go
+│  │  ├─ model/                    # 数据模型定义
+│  │  │  └─ user.go                # 用户相关数据结构
 │  │  ├─ repo/                     # 数据访问（SQL/ORM）
 │  │  │  ├─ user_repo.go
 │  │  │  ├─ event_repo.go
@@ -38,15 +40,14 @@ SE_Practice/
 ```
 
 说明：
-- 合并相关领域，减少文件与目录数量，先做通跑，后续再拆分细化。
 - `handler/event.go` 覆盖：赛事列表、订阅；`handler/match.go` 合并比赛、阵容、评分的基础接口。
-- `repo/*` 仅保留最必要的三个仓储：用户、赛事、比赛。
+- `repo/*` 必要的三个仓储：用户、赛事、比赛。
 
 ## 最小接口集合（建议首批）
 - 认证：POST `/api/register`、POST `/api/login`
 - 赛事：GET `/api/events`、POST `/api/events/subscribe`
 - 比赛：GET `/api/matches`、GET `/api/matches/{id}`
-- 评分/阵容：POST `/api/ratings`、POST `/api/lineups`（可延后上线）
+- 评分/阵容：POST `/api/ratings`、POST `/api/lineups`
 
 ## 运行与配置（精简）
 - 配置从环境变量或 `configs/config.yaml` 加载（DB 连接、端口、JWT 密钥）。
