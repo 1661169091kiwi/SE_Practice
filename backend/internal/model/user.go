@@ -42,6 +42,32 @@ type UpdateUserRequest struct {
 	AvatarURL string `json:"avatar_url"`
 }
 
+// ChangePasswordRequest 修改密码请求
+type ChangePasswordRequest struct {
+	StudentID   string `json:"student_id" binding:"required"`
+	OldPassword string `json:"old_password" binding:"required"`
+	NewPassword string `json:"new_password" binding:"required"`
+}
+
+// UpdateAvatarResponse 更新头像响应
+type UpdateAvatarResponse struct {
+	AvatarURL string `json:"avatar_url"`
+	Message   string `json:"message"`
+}
+
+// UpdateCollegeRequest 更新学院请求
+type UpdateCollegeRequest struct {
+	StudentID string `json:"student_id" binding:"required"`
+	College   string `json:"college" binding:"required"`
+}
+
+// UpdateCollegeResponse 更新学院响应
+type UpdateCollegeResponse struct {
+	StudentID string `json:"student_id"`
+	College   string `json:"college"`
+	Message   string `json:"message"`
+}
+
 // Team 队伍模型
 type Team struct {
 	ID          int64     `json:"team_id"`

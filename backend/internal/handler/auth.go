@@ -1,4 +1,4 @@
-package handler  //该包负责HTTP请求处理
+package handler //该包负责HTTP请求处理
 //前后端交互流程：
 //HTTP请求->handler（HTTP请求处理层）->service（业务逻辑层）->repo（数据访问层）->数据库（前端发起请求流程）
 //数据库->repo->service->handler->HTTP响应（后端响应前端流程）
@@ -10,17 +10,17 @@ package handler  //该包负责HTTP请求处理
 //HTTP请求处理层（handler）：负责处理HTTP请求，调用业务逻辑层进行业务处理。
 //HTTP响应：负责将业务处理结果返回给前端。
 
-
 import (
 	"encoding/json"
 	"net/http" //Go标准库的HTTP功能
+	"strings"
 
 	"se_practice/backend/internal/model"
 	"se_practice/backend/internal/service"
 	"se_practice/backend/internal/util" //项目内部的工具包（统一响应格式）
 )
 
-var authService = service.NewAuthService()  //创建一个AuthService全局变量，该变量用于处理认证相关的业务逻辑
+var authService = service.NewAuthService() //创建一个AuthService全局变量，该变量用于处理认证相关的业务逻辑
 
 // 处理用户注册
 func Register(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +54,177 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	util.OK(w, user)
 }
 
+// 获取用户个人资料
+func GetUserProfile(w http.ResponseWriter, r *http.Request) {
+	// 检查是否为GET请求
+	if r.Method != http.MethodGet {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// 从URL路径中提取学号: /api/user/profile/{student_id}
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/user/profile/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		util.Error(w, http.StatusBadRequest, "student_id is required")
+		return
+	}
+	studentID := parts[0]
+
+	// 调用服务层获取用户资料
+	profile, err := authService.GetUserProfile(studentID)
+	if err != nil {
+		util.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if profile == nil {
+		util.Error(w, http.StatusNotFound, "user not found")
+		return
+	}
+
+	util.OK(w, profile)
+}
+
+// 更新用户学院信息
+func UpdateCollege(w http.ResponseWriter, r *http.Request) {
+	// 检查是否为POST请求
+	if r.Method != http.MethodPost {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// 解析请求体
+	var req model.UpdateCollegeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		util.Error(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	// 验证请求参数
+	if req.StudentID == "" || req.College == "" {
+		util.Error(w, http.StatusBadRequest, "student_id and college are required")
+		return
+	}
+
+	// 调用服务层更新学院信息
+	response, err := authService.UpdateCollege(&req)
+	if err != nil {
+		if err == service.ErrUserNotFound {
+			util.Error(w, http.StatusNotFound, "user not found")
+			return
+		}
+		util.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// 返回成功响应
+	util.OK(w, response)
+}
+
+// 更新用户头像
+func UpdateAvatar(w http.ResponseWriter, r *http.Request) {
+	// 检查是否为POST请求
+	if r.Method != http.MethodPost {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// 从URL路径中提取学号: /api/user/avatar/{student_id}
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/user/avatar/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		util.Error(w, http.StatusBadRequest, "student_id is required")
+		return
+	}
+	studentID := parts[0]
+
+	// 设置最大文件大小限制（10MB）
+	r.ParseMultipartForm(10 << 20)
+
+	// 获取上传的文件
+	file, handler, err := r.FormFile("avatar")
+	if err != nil {
+		util.Error(w, http.StatusBadRequest, "no file uploaded")
+		return
+	}
+	defer file.Close()
+
+	// 验证文件大小（不超过10MB）
+	if handler.Size > 10<<20 {
+		util.Error(w, http.StatusBadRequest, "file too large")
+		return
+	}
+
+	// 验证文件类型
+	allowedTypes := map[string]bool{
+		".jpg":  true,
+		".jpeg": true,
+		".png":  true,
+		".gif":  true,
+	}
+	ext := handler.Filename[strings.LastIndex(handler.Filename, "."):]
+	if !allowedTypes[strings.ToLower(ext)] {
+		util.Error(w, http.StatusBadRequest, "invalid file type")
+		return
+	}
+
+	// 在实际应用中，这里应该将文件保存到服务器或云存储
+	// 为了简化，我们使用一个模拟的URL
+	// 实际部署时需要替换为真实的文件保存逻辑
+	avatarURL := "/uploads/avatars/" + studentID + ext
+
+	// 调用服务层更新头像
+	err = authService.UpdateAvatar(studentID, avatarURL)
+	if err != nil {
+		if err == service.ErrUserNotFound {
+			util.Error(w, http.StatusNotFound, "user not found")
+			return
+		}
+		util.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// 返回成功响应
+	response := model.UpdateAvatarResponse{
+		AvatarURL: avatarURL,
+		Message:   "头像更新成功",
+	}
+	util.OK(w, response)
+}
+
+// 修改用户密码
+func ChangePassword(w http.ResponseWriter, r *http.Request) {
+	// 检查是否为POST请求
+	if r.Method != http.MethodPost {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// 解析请求体
+	var req model.ChangePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		util.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// 调用服务层修改密码
+	err := authService.ChangePassword(&req)
+	if err != nil {
+		// 根据错误类型返回不同的状态码
+		switch err {
+		case service.ErrInvalidCredential:
+			util.Error(w, http.StatusUnauthorized, err.Error())
+		case service.ErrPasswordSame:
+			util.Error(w, http.StatusBadRequest, err.Error())
+		default:
+			util.Error(w, http.StatusInternalServerError, "failed to change password")
+		}
+		return
+	}
+
+	// 成功响应
+	util.OK(w, map[string]string{"message": "password changed successfully"})
+}
+
 // 处理用户登录
 func Login(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -84,5 +255,3 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	}
 	util.OK(w, resp)
 }
-
-

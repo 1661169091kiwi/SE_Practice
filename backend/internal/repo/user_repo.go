@@ -58,6 +58,13 @@ func (r *UserRepo) UserExists(studentID string) (bool, error) {
 	return count > 0, nil
 }
 
+// UpdatePassword 更新用户密码
+func (r *UserRepo) UpdatePassword(studentID string, newHashedPassword string) error {
+	query := `UPDATE users SET password = ? WHERE student_id = ?`
+	_, err := db.Exec(query, newHashedPassword, studentID)
+	return err
+}
+
 // CreateTeam 创建队伍
 func (r *UserRepo) CreateTeam(team *model.Team) (int64, error) {
 	query := `INSERT INTO teams (team_name, sport_id, college, team_type, avatar_url, description, created_by) 
