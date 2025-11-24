@@ -23,12 +23,14 @@ func New() http.Handler {
 	mux.HandleFunc("/api/user/college", handler.UpdateCollege)   // 更新用户学院信息
 
 	// events （未实现）
-	mux.HandleFunc("/api/events", handler.Events)
-	mux.HandleFunc("/api/events/subscribe", handler.SubscribeEvent)
+	mux.HandleFunc("/api/events", handler.CreateEvent)
+	mux.HandleFunc("/api/events/", handler.GetEventDetail)
+	mux.HandleFunc("/api/events/list", handler.ListEvents)
 
 	// matches
 	mux.HandleFunc("/api/matches", handler.Matches)
-	mux.HandleFunc("/api/matches/", handler.MatchDetail) // expects /api/matches/{id}
-
+	mux.HandleFunc("/api/matches/", handler.MatchDetail)
+	mux.HandleFunc("/api/matches/create", handler.CreateMatch)
+	mux.HandleFunc("/api/matches/update-score/", handler.UpdateMatchScore)
 	return mux
 }
