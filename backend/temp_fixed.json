@@ -1,0 +1,984 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "Sports Management System API",
+        "version": "1.0.0",
+        "description": "API documentation for School Sports Management System"
+    },
+    "servers": [
+        {
+            "url": "http://localhost:8080",
+            "description": "Local Development Server"
+        }
+    ],
+    "paths": {
+        "/api/health": {
+            "get": {
+                "summary": "Health Check",
+                "tags": [
+                    "System"
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/register": {
+            "post": {
+                "summary": "User Register",
+                "tags": [
+                    "Auth"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RegisterRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/User"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "User already exists"
+                    }
+                }
+            }
+        },
+        "/api/login": {
+            "post": {
+                "summary": "User Login",
+                "tags": [
+                    "Auth"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LoginRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/LoginResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/user/change-password": {
+            "post": {
+                "summary": "Change Password",
+                "tags": [
+                    "Auth"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ChangePasswordRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Success"
+                    }
+                }
+            }
+        },
+        "/api/user/profile/{student_id}": {
+            "get": {
+                "summary": "Get User Profile",
+                "tags": [
+                    "Auth"
+                ],
+                "parameters": [
+                    {
+                        "name": "student_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/User"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "User not found"
+                    }
+                }
+            }
+        },
+        "/api/user/college": {
+            "post": {
+                "summary": "Update User College",
+                "tags": [
+                    "Auth"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/UpdateCollegeRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UpdateCollegeResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/user/avatar/{student_id}": {
+            "post": {
+                "summary": "Update Avatar",
+                "tags": [
+                    "Auth"
+                ],
+                "parameters": [
+                    {
+                        "name": "student_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "avatar": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/UpdateAvatarResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/events": {
+            "post": {
+                "summary": "Create Event",
+                "tags": [
+                    "Events"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateEventRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Event"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/events/{id}": {
+            "get": {
+                "summary": "Get Event Detail",
+                "tags": [
+                    "Events"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Event"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/events/list": {
+            "get": {
+                "summary": "List Events",
+                "tags": [
+                    "Events"
+                ],
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Filter by status (upcoming/ongoing/finished)"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Event"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/matches": {
+            "get": {
+                "summary": "List Matches",
+                "tags": [
+                    "Matches"
+                ],
+                "parameters": [
+                    {
+                        "name": "event_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Match"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/matches/{id}": {
+            "get": {
+                "summary": "Match Detail",
+                "tags": [
+                    "Matches"
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MatchDetailResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/matches/create": {
+            "post": {
+                "summary": "Create Match",
+                "tags": [
+                    "Matches"
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CreateMatchRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Match"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/match/data": {
+            "get": {
+                "summary": "Get Match Data (Standings/Schedule/etc)",
+                "tags": [
+                    "Matches"
+                ],
+                "parameters": [
+                    {
+                        "name": "sportType",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "description": "1=Recommendation, 2=Football, 3=Basketball, 4=Badminton, 5=Volleyball, 6=Water Sports"
+                    },
+                    {
+                        "name": "matchTime",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "YYYY-MM or YYYY-MM-DD"
+                    },
+                    {
+                        "name": "dataType",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "积分榜/球员榜/球队榜/赛程/历史"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MatchDataResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/user/subscribed-matches": {
+            "get": {
+                "summary": "Get User Subscribed Matches",
+                "tags": [
+                    "User"
+                ],
+                "parameters": [
+                    {
+                        "name": "userId",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "User ID"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SubscribedMatchResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/user/subscribe": {
+            "post": {
+                "summary": "Subscribe/Unsubscribe Match",
+                "tags": [
+                    "User"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SubscribeRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/APIResponse"
+                                        },
+                                        {
+                                            "properties": {
+                                                "data": {
+                                                    "$ref": "#/components/schemas/SubscribeResponse"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "User": {
+                "type": "object",
+                "properties": {
+                    "student_id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "college": {
+                        "type": "string"
+                    },
+                    "grade": {
+                        "type": "string"
+                    },
+                    "avatar_url": {
+                        "type": "string"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "RegisterRequest": {
+                "type": "object",
+                "required": [
+                    "student_id",
+                    "password",
+                    "name"
+                ],
+                "properties": {
+                    "student_id": {
+                        "type": "string"
+                    },
+                    "password": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "college": {
+                        "type": "string"
+                    },
+                    "grade": {
+                        "type": "string"
+                    }
+                }
+            },
+            "LoginRequest": {
+                "type": "object",
+                "required": [
+                    "student_id",
+                    "password"
+                ],
+                "properties": {
+                    "student_id": {
+                        "type": "string"
+                    },
+                    "password": {
+                        "type": "string"
+                    }
+                }
+            },
+            "LoginResponse": {
+                "type": "object",
+                "properties": {
+                    "token": {
+                        "type": "string"
+                    },
+                    "user": {
+                        "$ref": "#/components/schemas/User"
+                    }
+                }
+            },
+            "ChangePasswordRequest": {
+                "type": "object",
+                "required": [
+                    "student_id",
+                    "old_password",
+                    "new_password"
+                ],
+                "properties": {
+                    "student_id": {
+                        "type": "string"
+                    },
+                    "old_password": {
+                        "type": "string"
+                    },
+                    "new_password": {
+                        "type": "string"
+                    }
+                }
+            },
+            "UpdateCollegeRequest": {
+                "type": "object",
+                "required": [
+                    "student_id",
+                    "college"
+                ],
+                "properties": {
+                    "student_id": {
+                        "type": "string"
+                    },
+                    "college": {
+                        "type": "string"
+                    }
+                }
+            },
+            "UpdateCollegeResponse": {
+                "type": "object",
+                "properties": {
+                    "student_id": {
+                        "type": "string"
+                    },
+                    "college": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                }
+            },
+            "UpdateAvatarResponse": {
+                "type": "object",
+                "properties": {
+                    "avatar_url": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                }
+            },
+            "Event": {
+                "type": "object",
+                "properties": {
+                    "event_id": {
+                        "type": "integer"
+                    },
+                    "event_name": {
+                        "type": "string"
+                    },
+                    "sport_id": {
+                        "type": "integer"
+                    },
+                    "season": {
+                        "type": "string"
+                    },
+                    "round": {
+                        "type": "string"
+                    },
+                    "format_type": {
+                        "type": "string"
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "CreateEventRequest": {
+                "type": "object",
+                "properties": {
+                    "event_name": {
+                        "type": "string"
+                    },
+                    "sport_id": {
+                        "type": "integer"
+                    },
+                    "season": {
+                        "type": "string"
+                    },
+                    "round": {
+                        "type": "string"
+                    },
+                    "format_type": {
+                        "type": "string"
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "Match": {
+                "type": "object",
+                "properties": {
+                    "match_id": {
+                        "type": "integer"
+                    },
+                    "event_id": {
+                        "type": "integer"
+                    },
+                    "match_name": {
+                        "type": "string"
+                    },
+                    "round": {
+                        "type": "string"
+                    },
+                    "match_time": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "team_a_id": {
+                        "type": "integer"
+                    },
+                    "team_b_id": {
+                        "type": "integer"
+                    },
+                    "score_team_a": {
+                        "type": "integer"
+                    },
+                    "score_team_b": {
+                        "type": "integer"
+                    },
+                    "status": {
+                        "type": "string"
+                    }
+                }
+            },
+            "CreateMatchRequest": {
+                "type": "object",
+                "properties": {
+                    "event_id": {
+                        "type": "integer"
+                    },
+                    "match_name": {
+                        "type": "string"
+                    },
+                    "round": {
+                        "type": "string"
+                    },
+                    "match_time": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "team_a_id": {
+                        "type": "integer"
+                    },
+                    "team_b_id": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "MatchDetailResponse": {
+                "type": "object",
+                "properties": {
+                    "match_id": {
+                        "type": "integer"
+                    },
+                    "match_name": {
+                        "type": "string"
+                    },
+                    "team_a": {
+                        "type": "object",
+                        "properties": {
+                            "team_id": {
+                                "type": "integer"
+                            },
+                            "team_name": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "team_b": {
+                        "type": "object",
+                        "properties": {
+                            "team_id": {
+                                "type": "integer"
+                            },
+                            "team_name": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "MatchDataResponse": {
+            "type": "object",
+            "properties": {
+                "dataList": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/components/schemas/ResultItem"
+                    }
+                }
+            }
+        },
+        "ResultItem": {
+            "type": "object",
+            "properties": {
+                "rank": {
+                    "type": "integer"
+                },
+                "imgUrl": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "赛": {
+                    "type": "integer"
+                },
+                "胜": {
+                    "type": "integer"
+                },
+                "平": {
+                    "type": "integer"
+                },
+                "负": {
+                    "type": "integer"
+                },
+                "进/失": {
+                    "type": "string"
+                },
+                "积分": {
+                    "type": "integer"
+                },
+                "matchTime": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "SubscribedMatchResponse": {
+            "type": "object",
+            "properties": {
+                "subscribedMatches": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/components/schemas/SubscribedMatchItem"
+                    }
+                }
+            }
+        },
+        "SubscribedMatchItem": {
+            "type": "object",
+            "properties": {
+                "matchId": {
+                    "type": "string"
+                },
+                "matchTime": {
+                    "type": "string"
+                },
+                "matchVenue": {
+                    "type": "string"
+                },
+                "homeTeam": {
+                    "$ref": "#/components/schemas/TeamWrapper"
+                },
+                "awayTeam": {
+                    "$ref": "#/components/schemas/TeamWrapper"
+                },
+                "matchStatus": {
+                    "type": "string"
+                },
+                "matchState": {
+                    "type": "string"
+                }
+            }
+        },
+        "TeamWrapper": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+            "SubscribeRequest": {
+            "type": "object",
+            "properties": {
+                "studentId": {
+                    "type": "string"
+                },
+                "matchId": {
+                    "type": "string"
+                },
+                "operateType": {
+                    "type": "integer",
+                    "description": "0=Subscribe, 1=Unsubscribe"
+                }
+            },
+            "required": [
+                "studentId",
+                "matchId",
+                "operateType"
+            ]
+        },
+        "SubscribeResponse": {
+            "type": "object",
+            "properties": {
+                "studentId": {
+                    "type": "string"
+                },
+                "matchId": {
+                    "type": "string"
+                },
+                "operateType": {
+                    "type": "integer"
+                }
+            }
+        },
+        "APIResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "data": {
+                    "type": "object"
+                }
+            }
+        }
+    }
+}
