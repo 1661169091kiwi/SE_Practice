@@ -128,3 +128,97 @@ func (s *MatchService) UpdateMatchScore(id, scoreA, scoreB int64) error {
 
 	return s.matchRepo.UpdateMatchScore(id, int(scoreA), int(scoreB))
 }
+
+// GetMatchData 获取赛事数据（积分榜/赛程等）
+func (s *MatchService) GetMatchData(sportType int, matchTime, dataType string) (*model.MatchDataResponse, error) {
+	var list []model.ResultItem
+	var err error
+
+	switch dataType {
+	case "积分榜":
+		list, err = s.matchRepo.GetStandings(sportType, matchTime)
+	case "赛程":
+		list, err = s.matchRepo.GetSchedule(sportType, matchTime)
+	case "历史":
+		list, err = s.matchRepo.GetHistory(sportType, matchTime)
+	case "球员榜", "球队榜":
+		// TODO: 暂时返回空数据，后续实现
+		list = []model.ResultItem{}
+	default:
+		return nil, errors.New("invalid dataType")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	// 如果没有数据，返回空数组而不是 nil (符合前端预期)
+	if list == nil {
+		list = []model.ResultItem{}
+	}
+
+	return &model.MatchDataResponse{
+		DataList: list,
+	}, nil
+}
+
+// GetUserSubscribedMatches 获取用户订阅赛事的比赛列表
+func (s *MatchService) GetUserSubscribedMatches(studentID string) (*model.SubscribedMatchResponse, error) {
+	if studentID == "" {
+		return nil, errors.New("studentID is required")
+	}
+
+	matches, err := s.matchRepo.GetMatchesBySubscription(studentID)
+	if err != nil {
+		return nil, err
+	}
+
+	if matches == nil {
+		matches = []model.SubscribedMatchItem{}
+	}
+
+	return &model.SubscribedMatchResponse{
+		SubscribedMatches: matches,
+	}, nil
+}
+
+// SubscribeMatch 处理订阅/取消订阅逻辑
+func (s *MatchService) SubscribeMatch(req *model.SubscribeRequest) (string, error) {
+	// 1. 根据 MatchID 找到 EventID
+	eventID, err := s.matchRepo.GetEventIDByMatchID(req.MatchID)
+	if err != nil {
+		return "", err
+	}
+	if eventID == 0 {
+		return "", errors.New("match not found")
+	}
+
+	// 2. 检查当前订阅状态
+	isSubscribed, err := s.matchRepo.CheckSubscription(req.StudentID, eventID)
+	if err != nil {
+		return "", err
+	}
+
+	// 3. 根据 operateType 执行逻辑
+	if req.OperateType == 0 { // 新增订阅
+		if isSubscribed {
+			return "已订阅该比赛，无需重复操作", nil // Return message, no error
+		}
+		err = s.matchRepo.SubscribeToEvent(req.StudentID, eventID)
+		if err != nil {
+			return "", err
+		}
+		return "订阅成功", nil
+	} else if req.OperateType == 1 { // 取消订阅
+		if !isSubscribed {
+			return "未订阅该比赛，无法取消", nil
+		}
+		err = s.matchRepo.UnsubscribeFromEvent(req.StudentID, eventID)
+		if err != nil {
+			return "", err
+		}
+		return "取消订阅成功", nil
+	}
+
+	return "", errors.New("invalid operateType")
+}

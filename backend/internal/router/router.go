@@ -32,5 +32,14 @@ func New() http.Handler {
 	mux.HandleFunc("/api/matches/", handler.MatchDetail)
 	mux.HandleFunc("/api/matches/create", handler.CreateMatch)
 	mux.HandleFunc("/api/matches/update-score/", handler.UpdateMatchScore)
+
+	// match data (积分榜等)
+	mux.HandleFunc("/api/match/data", handler.GetMatchData)
+
+	// user subscribed matches
+	mux.HandleFunc("/api/user/subscribed-matches", handler.GetUserSubscribedMatches)
+
+	// user subscribe operation
+	mux.HandleFunc("/api/user/subscribe", handler.SubscribeMatch)
 	return mux
 }
