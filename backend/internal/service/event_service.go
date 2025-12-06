@@ -32,6 +32,14 @@ func (s *EventService) CreateEvent(req *model.CreateEventRequest) (*model.EventR
 		return nil, errors.New("start date must be before end date")
 	}
 
+	// 设置默认 Format 或验证 Format
+	if req.Format == "" {
+		req.Format = "points" // 默认积分制
+	}
+	if req.Format != "points" && req.Format != "group_knockout" {
+		return nil, errors.New("invalid format type: must be 'points' or 'group_knockout'")
+	}
+
 	// 构建赛事模型
 	event := &model.Event{
 		Name:      req.EventName,
