@@ -1,39 +1,91 @@
-# 软件工程中级实训代码仓库
+# 体育赛事管理系统（SE_Practice）
 
-#### 介绍
-{**以下是 Gitee 平台说明，您可以替换此简介**
-Gitee 是 OSCHINA 推出的基于 Git 的代码托管平台（同时支持 SVN）。专为开发者提供稳定、高效、安全的云端软件开发协作平台
-无论是个人、团队、或是企业，都能够用 Gitee 实现代码托管、项目管理、协作开发。企业项目请看 [https://gitee.com/enterprises](https://gitee.com/enterprises)}
+一个用于校园体育赛事管理与数据采集的全栈项目，包含学生端赛事浏览与订阅、采集员端数据录入、比赛详情与积分榜展示等功能。
 
-#### 软件架构
-软件架构说明
+## 技术栈
+- 前端：Vue 3、Vite、Pinia、Vue Router
+- 后端：Go、MySQL
+- 开发工具：Node.js（>= 20）、Go（>= 1.22）、Vite Dev Server
 
+## 目录结构
+```
+SE_Practice/
+├─ backend/                # Go 后端（API 服务）
+│  ├─ cmd/api              # 入口命令
+│  └─ internal/...         # 业务与服务实现
+├─ frontend/               # Vue 前端（学生端/采集员端）
+│  ├─ src/views            # 主要页面
+│  └─ src/stores           # 状态管理（Pinia）
+├─ database_struction.md   # 数据库设计与建表语句
+└─ README.md               # 项目说明（当前文件）
+```
 
-#### 安装教程
+## 快速开始
+> 以下步骤以本地开发为例，默认后端端口 `8081`，前端端口 `5173`。
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+### 1. 准备环境
+- 安装 Node.js（推荐 20+）
+- 安装 Go（推荐 1.22+）
+- 安装并启动 MySQL，创建数据库：
+  ```
+  CREATE DATABASE sports_management;
+  ```
 
-#### 使用说明
+### 2. 启动后端
+在 `backend` 目录：
+```powershell
+# Windows（PowerShell）
+$env:DB_DSN='root:<your_password>@tcp(localhost:3306)/sports_management?charset=utf8mb4&parseTime=True&loc=Local'
+$env:APP_PORT='8081'
+go run ./cmd/api
+```
+```bash
+# macOS / Linux（bash/zsh）
+export DB_DSN='root:<your_password>@tcp(localhost:3306)/sports_management?charset=utf8mb4&parseTime=True&loc=Local'
+export APP_PORT='8081'
+go run ./cmd/api
+```
+成功日志示例：
+```
+Database connection established successfully
+Database schema initialized successfully
+server starting at :8081
+```
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+### 3. 启动前端
+在 `frontend` 目录：
+```bash
+npm install
+```
+配置后端地址并启动开发服务器：
+```powershell
+# Windows（PowerShell）
+$env:VITE_API_BASE_URL='http://localhost:8081/api'
+npm run dev
+```
+```bash
+# macOS / Linux（bash/zsh）
+export VITE_API_BASE_URL='http://localhost:8081/api'
+npm run dev
+```
+打开浏览器访问：`http://localhost:5173/`
 
-#### 参与贡献
+## 常用脚本（前端）
+- 开发启动：`npm run dev`
+- 生产构建：`npm run build`
+- 预览构建：`npm run preview`
+- 代码检查：`npm run lint`
 
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
+## 访问入口
+- 学生端赛事列表：`/student/events`
+- 采集员赛事选择：`/events`
+- 比赛详情页：`/match/:id`
+- 积分榜：`/student/standings/:id`
 
+## 常见问题
+- 端口占用：修改 `APP_PORT` 或通过 `vite --port` 指定前端端口
+- 接口 404：确认前端 `VITE_API_BASE_URL` 指向后端 `http://localhost:8081/api`
+- 数据库连接失败：检查 `DB_DSN` 格式、数据库是否已创建、账号密码是否正确
 
-#### 特技
-
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+## 本地部署与运行指南
+为协作者准备了更详细的步骤说明，参见：`LOCAL_DEPLOYMENT.md`
