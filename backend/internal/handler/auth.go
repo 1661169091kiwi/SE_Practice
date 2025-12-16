@@ -11,10 +11,17 @@ package handler //该包负责HTTP请求处理
 //HTTP响应：负责将业务处理结果返回给前端。
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"net/http" //Go标准库的HTTP功能
+	"os"
+	"strconv"
 	"strings"
+	"time"
 
+	"se_practice/backend/internal/middleware"
 	"se_practice/backend/internal/model"
 	"se_practice/backend/internal/service"
 	"se_practice/backend/internal/util" //项目内部的工具包（统一响应格式）
@@ -225,6 +232,210 @@ func ChangePassword(w http.ResponseWriter, r *http.Request) {
 	util.OK(w, map[string]string{"message": "password changed successfully"})
 }
 
+// ApplyCollector 申请成为采集员
+func ApplyCollector(w http.ResponseWriter, r *http.Request) {
+	// 检查是否为POST请求
+	if r.Method != http.MethodPost {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// 解析请求体
+	var req struct {
+		StudentID string `json:"student_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		util.Error(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	if req.StudentID == "" {
+		util.Error(w, http.StatusBadRequest, "student_id is required")
+		return
+	}
+
+	// 调用服务层
+	if err := authService.ApplyCollector(req.StudentID); err != nil {
+		util.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	util.OK(w, map[string]string{"message": "申请已提交，等待审核"})
+}
+
+// ListPendingCollectors 列出待审核的采集员申请
+func ListPendingCollectors(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// 权限检查
+	if !middleware.CheckRole(w, r, "admin") {
+		return
+	}
+
+	apps, err := authService.ListPendingCollectors()
+	if err != nil {
+		util.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	util.OK(w, apps)
+}
+
+// ListCollectors 列出所有已批准的采集员
+func ListCollectors(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// 权限检查
+	if !middleware.CheckRole(w, r, "admin") {
+		return
+	}
+
+	collectors, err := authService.ListCollectors()
+	if err != nil {
+		util.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	util.OK(w, collectors)
+}
+
+// DeleteCollector 删除采集员
+func DeleteCollector(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// 权限检查
+	if !middleware.CheckRole(w, r, "admin") {
+		return
+	}
+
+	studentID := r.URL.Query().Get("student_id")
+	if studentID == "" {
+		util.Error(w, http.StatusBadRequest, "student_id is required")
+		return
+	}
+
+	if err := authService.DeleteCollector(studentID); err != nil {
+		util.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	util.OK(w, "collector deleted")
+}
+
+// ApproveCollector 批准采集员申请
+func ApproveCollector(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// 权限检查
+	if !middleware.CheckRole(w, r, "admin") {
+		return
+	}
+
+	var req struct {
+		StudentID string `json:"student_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		util.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.StudentID == "" {
+		util.Error(w, http.StatusBadRequest, "student_id is required")
+		return
+	}
+
+	if err := authService.ApproveCollector(req.StudentID); err != nil {
+		util.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	util.OK(w, map[string]string{"message": "已批准申请"})
+}
+
+// ApplyAthlete 申请成为运动员
+func ApplyAthlete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req model.ApplyAthleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		util.Error(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	if req.StudentID == "" || req.TeamID == 0 || req.SportType == "" {
+		util.Error(w, http.StatusBadRequest, "student_id, team_id and sport_type are required")
+		return
+	}
+
+	if err := authService.ApplyAthlete(&req); err != nil {
+		util.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	util.OK(w, map[string]string{"message": "申请成功"})
+}
+
+// GetPendingAthletes 获取待审核的运动员申请
+func GetPendingAthletes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if !middleware.CheckRole(w, r, "admin") {
+		return
+	}
+
+	apps, err := authService.GetPendingAthletes()
+	if err != nil {
+		util.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	util.OK(w, apps)
+}
+
+// ApproveAthlete 批准运动员
+func ApproveAthlete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if !middleware.CheckRole(w, r, "admin") {
+		return
+	}
+
+	var req struct {
+		TeamMemberID int64 `json:"team_member_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		util.Error(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	if err := authService.ApproveAthlete(req.TeamMemberID); err != nil {
+		util.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	util.OK(w, map[string]string{"message": "approved"})
+}
+
 // 处理用户登录
 func Login(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -248,10 +459,30 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 先不生成真正的 JWT，返回一个占位 token + 用户信息
-	resp := model.LoginResponse{
-		Token: "stub.jwt.token",
-		User:  *user,
-	}
+	token := signToken(user.StudentID, user.Role)
+	resp := model.LoginResponse{Token: token, User: *user}
 	util.OK(w, resp)
+}
+
+// signToken 增加 role、exp 字段（默认 role=collector，过期时间 24 小时）
+func signToken(studentID, role string) string {
+	header := `{"alg":"HS256","typ":"JWT"}`
+	now := time.Now().Unix()
+	exp := now + 24*60*60
+	payload := `{"sub":"` + studentID + `","iat":` + fmtInt(now) + `,"exp":` + fmtInt(exp) + `,"role":"` + role + `"}`
+	hb := base64.RawURLEncoding.EncodeToString([]byte(header))
+	pb := base64.RawURLEncoding.EncodeToString([]byte(payload))
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		secret = "dev-secret"
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(hb + "." + pb))
+	sig := mac.Sum(nil)
+	sb := base64.RawURLEncoding.EncodeToString(sig)
+	return hb + "." + pb + "." + sb
+}
+
+func fmtInt(i int64) string {
+	return strconv.FormatInt(i, 10)
 }

@@ -17,13 +17,17 @@ func main() {
 		port = "8080"
 	}
 
-	// 2. 初始化数据库（使用 configs/config.yaml 里的默认 DSN，实际可改为读配置）
-	dsn := "root:15329554862ph@tcp(localhost:3306)/sports_management?charset=utf8mb4&parseTime=True&loc=Local"
-	if envDSN := os.Getenv("DB_DSN"); envDSN != "" {
-		dsn = envDSN
+	dsn := os.Getenv("DB_DSN")
+	if dsn == "" {
+		log.Fatalf("DB_DSN is required")
 	}
 	if _, err := db.Init(dsn); err != nil {
 		log.Fatalf("failed to init database: %v", err)
+	}
+
+	// 初始化表结构
+	if err := db.InitSchema(); err != nil {
+		log.Printf("Warning: failed to init schema: %v", err)
 	}
 
 	// 3. 注册路由并启动 HTTP 服务

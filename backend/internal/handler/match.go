@@ -2,10 +2,12 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"se_practice/backend/internal/middleware"
 	"se_practice/backend/internal/model"
 	"se_practice/backend/internal/service"
 	"se_practice/backend/internal/util"
@@ -34,12 +36,13 @@ func Matches(w http.ResponseWriter, r *http.Request) {
 
 	// 调用服务层获取比赛列表
 	var matches []model.Match
+	view := r.URL.Query().Get("view")
 	if eventID > 0 {
 		// 按赛事ID筛选
-		matches, err = matchService.ListMatchesByEvent(eventID)
+		matches, err = matchService.ListMatchesByEvent(eventID, view)
 	} else {
 		// 获取所有比赛
-		matches, err = matchService.ListAllMatches()
+		matches, err = matchService.ListAllMatches(view)
 	}
 
 	if err != nil {
@@ -52,6 +55,10 @@ func Matches(w http.ResponseWriter, r *http.Request) {
 
 // MatchDetail 获取比赛详情
 func MatchDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPut {
+		UpdateMatch(w, r)
+		return
+	}
 	if r.Method != http.MethodGet {
 		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -91,6 +98,11 @@ func CreateMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 权限检查
+	if !middleware.CheckRole(w, r, "admin") {
+		return
+	}
+
 	var req model.CreateMatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		util.Error(w, http.StatusBadRequest, "invalid request body")
@@ -115,6 +127,8 @@ func CreateMatch(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
+	log.Printf("[Admin Log] Match created: %s (EventID: %d)", match.Name, match.EventID)
 
 	util.OK(w, match)
 }
@@ -164,6 +178,53 @@ func UpdateMatchScore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	util.OK(w, map[string]string{"message": "score updated successfully"})
+}
+
+// UpdateMatch 更新比赛信息
+func UpdateMatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// 权限检查
+	if !middleware.CheckRole(w, r, "admin") {
+		return
+	}
+
+	// 解析路径参数: /api/matches/{id}
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/matches/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		util.Error(w, http.StatusBadRequest, "match id is required")
+		return
+	}
+
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		util.Error(w, http.StatusBadRequest, "invalid match id")
+		return
+	}
+
+	var req model.CreateMatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		util.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	err = matchService.UpdateMatch(id, &req)
+	if err != nil {
+		switch err.Error() {
+		case "match not found", "event not found":
+			util.Error(w, http.StatusNotFound, err.Error())
+		case "team a not found", "team b not found":
+			util.Error(w, http.StatusBadRequest, err.Error())
+		default:
+			util.Error(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+
+	util.OK(w, map[string]string{"message": "match updated successfully"})
 }
 
 // GetMatchData 获取赛事数据（积分榜/球员榜/赛程/历史）
@@ -239,8 +300,8 @@ func SubscribeMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.StudentID == "" || req.MatchID == "" {
-		util.Error(w, http.StatusBadRequest, "studentId and matchId are required")
+	if req.StudentID == "" || (req.MatchID == "" && req.EventID == 0) {
+		util.Error(w, http.StatusBadRequest, "studentId and (matchId or eventId) are required")
 		return
 	}
 
@@ -269,4 +330,33 @@ func SubscribeMatch(w http.ResponseWriter, r *http.Request) {
 		Message: msg,
 		Data:    resp,
 	})
+}
+
+// DeleteMatch 删除比赛
+func DeleteMatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if !middleware.CheckRole(w, r, "admin") {
+		return
+	}
+
+	idStr := r.URL.Query().Get("id")
+	if idStr == "" {
+		util.Error(w, http.StatusBadRequest, "id required")
+		return
+	}
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		util.Error(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	if err := matchService.DeleteMatch(id); err != nil {
+		util.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	util.OK(w, "match deleted")
 }
