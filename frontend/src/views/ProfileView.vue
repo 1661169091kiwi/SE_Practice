@@ -72,6 +72,17 @@ const userInfo = reactive({
 })
 
 const myTeams = ref([])
+const myMatches = ref([]) // 运动员参加的比赛列表
+const isLoadingMatches = ref(false)
+const availableMatches = ref([]) // 可报名的比赛列表
+const isLoadingAvailableMatches = ref(false)
+const showJoinMatchModal = ref(false)
+const selectedMatch = ref(null)
+const joinMatchForm = reactive({
+  position: '',
+  jerseyNumber: '',
+  isStarting: false
+})
 
 // 密码修改表单
 const passwordForm = reactive({
@@ -277,6 +288,12 @@ const loadUserInfo = async () => {
       // 只要是学生就可以尝试获取队伍（包括自己创建的待审核队伍）
       fetchMyTeams()
       
+      // 如果是运动员，获取参加的比赛和可报名的比赛
+      if (userInfo.roles.includes('athlete')) {
+        fetchMyMatches()
+        fetchAvailableMatches()
+      }
+      
     } else {
       showToast(res.msg || '获取用户信息失败', 'error')
     }
@@ -410,6 +427,125 @@ const fetchMyTeams = async () => {
     }
   } catch (err) {
     console.error('Fetch my teams error:', err)
+  }
+}
+
+// 获取我参加的比赛
+const fetchMyMatches = async () => {
+  // 只有运动员才需要获取比赛列表
+  if (!userInfo.roles.includes('athlete')) {
+    return
+  }
+  
+  isLoadingMatches.value = true
+  try {
+    const res = await get(`/athlete/matches?student_id=${authStore.studentId}`)
+    if (res.code === 200 && res.data) {
+      myMatches.value = res.data || []
+    }
+  } catch (err) {
+    console.error('Fetch my matches error:', err)
+    myMatches.value = []
+  } finally {
+    isLoadingMatches.value = false
+  }
+}
+
+// 格式化比赛时间
+const formatMatchTime = (timeStr) => {
+  if (!timeStr) return ''
+  const date = new Date(timeStr)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+// 获取比赛状态文本
+const getMatchStatusText = (status) => {
+  const statusMap = {
+    'not_started': '未开始',
+    'ongoing': '进行中',
+    'finished': '已结束',
+    'cancelled': '已取消'
+  }
+  return statusMap[status] || status
+}
+
+// 跳转到比赛详情
+const goToMatchDetail = (matchId) => {
+  router.push(`/match/${matchId}`)
+}
+
+// 获取可报名的比赛列表
+const fetchAvailableMatches = async () => {
+  // 只有运动员才需要获取可报名比赛列表
+  if (!userInfo.roles.includes('athlete')) {
+    return
+  }
+  
+  isLoadingAvailableMatches.value = true
+  try {
+    const res = await get(`/athlete/available-matches?student_id=${authStore.studentId}`)
+    if (res.code === 200 && res.data) {
+      availableMatches.value = res.data || []
+    }
+  } catch (err) {
+    console.error('Fetch available matches error:', err)
+    availableMatches.value = []
+  } finally {
+    isLoadingAvailableMatches.value = false
+  }
+}
+
+// 打开报名弹窗
+const openJoinMatchModal = (match) => {
+  selectedMatch.value = match
+  // 确定运动员属于哪个队伍
+  const myTeamIds = myTeams.value.map(t => t.team_id)
+  const teamId = myTeamIds.includes(match.team_a_id) ? match.team_a_id : match.team_b_id
+  selectedMatch.value.myTeamId = teamId
+  selectedMatch.value.myTeamName = teamId === match.team_a_id ? match.team_a_name : match.team_b_name
+  joinMatchForm.position = ''
+  joinMatchForm.jerseyNumber = ''
+  joinMatchForm.isStarting = false
+  showJoinMatchModal.value = true
+}
+
+// 提交报名
+const handleJoinMatch = async () => {
+  if (!selectedMatch.value) {
+    return
+  }
+  
+  uiState.isSubmitting = true
+  try {
+    const res = await post('/athlete/join-match', {
+      student_id: authStore.studentId,
+      match_id: selectedMatch.value.match_id,
+      team_id: selectedMatch.value.myTeamId,
+      position: joinMatchForm.position,
+      jersey_number: joinMatchForm.jerseyNumber,
+      is_starting: joinMatchForm.isStarting
+    })
+    
+    if (res.code === 200) {
+      showToast('报名成功')
+      showJoinMatchModal.value = false
+      // 刷新比赛列表
+      fetchMyMatches()
+      fetchAvailableMatches()
+    } else {
+      showToast(res.message || res.msg || '报名失败', 'error')
+    }
+  } catch (err) {
+    console.error('Join match error:', err)
+    showToast('报名失败，请稍后重试', 'error')
+  } finally {
+    uiState.isSubmitting = false
   }
 }
 
@@ -613,6 +749,103 @@ onMounted(() => {
                 @click.stop="openTeamManagement(team)"
               >
                 管理
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 我参加的比赛 (仅运动员可见) -->
+      <div v-if="userInfo.roles.includes('athlete')" class="my-matches-container">
+        <h3 class="section-title">我参加的比赛</h3>
+        <div v-if="isLoadingMatches" class="loading-matches">
+          <div class="loading-spinner"></div>
+          <p>加载中...</p>
+        </div>
+        <div v-else-if="myMatches.length === 0" class="no-matches">
+          <p>暂无参加的比赛</p>
+        </div>
+        <div v-else class="matches-list">
+          <div 
+            v-for="match in myMatches" 
+            :key="match.match_id" 
+            class="match-card"
+            @click="goToMatchDetail(match.match_id)"
+          >
+            <div class="match-header">
+              <div class="match-name">{{ match.match_name || '比赛' }}</div>
+              <div class="match-status" :class="'status-' + match.status">
+                {{ getMatchStatusText(match.status) }}
+              </div>
+            </div>
+            <div class="match-teams">
+              <div class="team-info">
+                <div class="team-name">{{ match.team_a_name || '主队' }}</div>
+                <div class="team-score">{{ match.score_team_a }}</div>
+              </div>
+              <div class="vs-divider">VS</div>
+              <div class="team-info">
+                <div class="team-name">{{ match.team_b_name || '客队' }}</div>
+                <div class="team-score">{{ match.score_team_b }}</div>
+              </div>
+            </div>
+            <div class="match-time">
+              <span>🕐</span>
+              {{ formatMatchTime(match.match_time) }}
+            </div>
+            <div v-if="match.round" class="match-round">
+              {{ match.round }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 可报名的比赛 (仅运动员可见) -->
+      <div v-if="userInfo.roles.includes('athlete')" class="available-matches-container">
+        <h3 class="section-title">可报名的比赛</h3>
+        <div v-if="isLoadingAvailableMatches" class="loading-matches">
+          <div class="loading-spinner"></div>
+          <p>加载中...</p>
+        </div>
+        <div v-else-if="availableMatches.length === 0" class="no-matches">
+          <p>暂无可报名的比赛</p>
+        </div>
+        <div v-else class="matches-list">
+          <div 
+            v-for="match in availableMatches" 
+            :key="match.match_id" 
+            class="match-card available-match-card"
+          >
+            <div class="match-header">
+              <div class="match-name">{{ match.match_name || '比赛' }}</div>
+              <div class="match-status" :class="'status-' + match.status">
+                {{ getMatchStatusText(match.status) }}
+              </div>
+            </div>
+            <div class="match-teams">
+              <div class="team-info">
+                <div class="team-name">{{ match.team_a_name || '主队' }}</div>
+                <div class="team-score">{{ match.score_team_a }}</div>
+              </div>
+              <div class="vs-divider">VS</div>
+              <div class="team-info">
+                <div class="team-name">{{ match.team_b_name || '客队' }}</div>
+                <div class="team-score">{{ match.score_team_b }}</div>
+              </div>
+            </div>
+            <div class="match-time">
+              <span>🕐</span>
+              {{ formatMatchTime(match.match_time) }}
+            </div>
+            <div v-if="match.round" class="match-round">
+              {{ match.round }}
+            </div>
+            <div class="match-actions">
+              <button class="btn-join-match" @click.stop="openJoinMatchModal(match)">
+                报名参加
+              </button>
+              <button class="btn-view-detail" @click.stop="goToMatchDetail(match.match_id)">
+                查看详情
               </button>
             </div>
           </div>
@@ -845,6 +1078,73 @@ onMounted(() => {
           <button @click="uiState.showAthleteModal = false" class="btn-secondary">取消</button>
           <button @click="handleApplyAthleteSubmit" class="btn-primary" :disabled="uiState.isSubmitting">
             提交申请
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 报名比赛弹窗 -->
+    <div v-if="showJoinMatchModal" class="modal-overlay" style="z-index: 1003;" @click="showJoinMatchModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3 class="modal-title">报名参加比赛</h3>
+          <button @click="showJoinMatchModal = false" class="modal-close">×</button>
+        </div>
+        
+        <div class="modal-body" v-if="selectedMatch">
+          <div class="match-info-summary">
+            <h4>{{ selectedMatch.match_name || '比赛' }}</h4>
+            <p class="match-teams-info">
+              {{ selectedMatch.team_a_name || '主队' }} VS {{ selectedMatch.team_b_name || '客队' }}
+            </p>
+            <p class="match-time-info">
+              <span>🕐</span> {{ formatMatchTime(selectedMatch.match_time) }}
+            </p>
+            <p class="match-team-info">
+              您的队伍：<strong>{{ selectedMatch.myTeamName }}</strong>
+            </p>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">位置 (可选)</label>
+            <input 
+              v-model="joinMatchForm.position" 
+              type="text" 
+              class="form-input" 
+              placeholder="例如: 前锋、后卫"
+            >
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">球衣号码 (可选)</label>
+            <input 
+              v-model="joinMatchForm.jerseyNumber" 
+              type="text" 
+              class="form-input" 
+              placeholder="例如: 10"
+            >
+          </div>
+          
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input 
+                v-model="joinMatchForm.isStarting" 
+                type="checkbox"
+              >
+              申请首发
+            </label>
+          </div>
+        </div>
+        
+        <div class="modal-footer">
+          <button @click="showJoinMatchModal = false" class="btn-secondary">取消</button>
+          <button 
+            @click="handleJoinMatch" 
+            class="btn-primary" 
+            :disabled="uiState.isSubmitting"
+          >
+            <span v-if="!uiState.isSubmitting">确认报名</span>
+            <span v-else>报名中...</span>
           </button>
         </div>
       </div>
@@ -1152,6 +1452,240 @@ onMounted(() => {
 
 .team-card:active {
   transform: scale(0.98);
+}
+
+/* 我参加的比赛样式 */
+.my-matches-container {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.loading-matches {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: #999;
+}
+
+.no-matches {
+  text-align: center;
+  padding: 40px;
+  color: #999;
+}
+
+.matches-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.match-card {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 1px solid #e9ecef;
+}
+
+.match-card:hover {
+  background: #e9ecef;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.match-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.match-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.match-status {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-not_started {
+  background: #e6f7ff;
+  color: #1890ff;
+}
+
+.status-ongoing {
+  background: #fff7e6;
+  color: #fa8c16;
+}
+
+.status-finished {
+  background: #f6ffed;
+  color: #52c41a;
+}
+
+.status-cancelled {
+  background: #fff1f0;
+  color: #ff4d4f;
+}
+
+.match-teams {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 16px;
+}
+
+.team-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.team-name {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.team-score {
+  font-size: 24px;
+  font-weight: 700;
+  color: #333;
+}
+
+.vs-divider {
+  font-size: 14px;
+  color: #999;
+  font-weight: 500;
+}
+
+.match-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 4px;
+}
+
+.match-round {
+  font-size: 12px;
+  color: #666;
+  font-style: italic;
+}
+
+/* 可报名比赛样式 */
+.available-matches-container {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-top: 24px;
+}
+
+.available-match-card {
+  border-left: 4px solid #1890ff;
+}
+
+.match-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e9ecef;
+}
+
+.btn-join-match {
+  flex: 1;
+  padding: 8px 16px;
+  background: #1890ff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-join-match:hover {
+  background: #40a9ff;
+  transform: translateY(-1px);
+}
+
+.btn-join-match:active {
+  transform: translateY(0);
+}
+
+.btn-view-detail {
+  flex: 1;
+  padding: 8px 16px;
+  background: #f0f0f0;
+  color: #666;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-view-detail:hover {
+  background: #e6e6e6;
+  border-color: #bfbfbf;
+}
+
+/* 报名弹窗样式 */
+.match-info-summary {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.match-info-summary h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.match-teams-info {
+  margin: 8px 0;
+  font-size: 14px;
+  color: #666;
+}
+
+.match-time-info {
+  margin: 8px 0;
+  font-size: 13px;
+  color: #999;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.match-team-info {
+  margin: 8px 0 0 0;
+  font-size: 14px;
+  color: #333;
+}
+
+.match-team-info strong {
+  color: #1890ff;
+  font-weight: 600;
 }
 
 .team-avatar-container {

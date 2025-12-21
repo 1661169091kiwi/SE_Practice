@@ -53,6 +53,87 @@ func Matches(w http.ResponseWriter, r *http.Request) {
 	util.OK(w, matches)
 }
 
+// AthleteMatches 获取运动员参加的比赛列表
+func AthleteMatches(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// 从查询参数获取学号
+	studentID := r.URL.Query().Get("student_id")
+	if studentID == "" {
+		util.Error(w, http.StatusBadRequest, "student_id is required")
+		return
+	}
+
+	// 获取 view 参数（可选）
+	view := r.URL.Query().Get("view")
+
+	// 调用服务层获取运动员的比赛列表
+	matches, err := matchService.GetAthleteMatches(studentID, view)
+	if err != nil {
+		util.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	util.OK(w, matches)
+}
+
+// AvailableMatchesForAthlete 获取运动员可以报名的比赛列表
+func AvailableMatchesForAthlete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// 从查询参数获取学号
+	studentID := r.URL.Query().Get("student_id")
+	if studentID == "" {
+		util.Error(w, http.StatusBadRequest, "student_id is required")
+		return
+	}
+
+	// 获取 view 参数（可选）
+	view := r.URL.Query().Get("view")
+
+	// 调用服务层获取可报名的比赛列表
+	matches, err := matchService.GetAvailableMatchesForAthlete(studentID, view)
+	if err != nil {
+		util.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	util.OK(w, matches)
+}
+
+// JoinMatch 运动员报名参加比赛
+func JoinMatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req model.JoinMatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		util.Error(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	if req.StudentID == "" || req.MatchID == 0 || req.TeamID == 0 {
+		util.Error(w, http.StatusBadRequest, "student_id, match_id and team_id are required")
+		return
+	}
+
+	// 调用服务层报名
+	if err := matchService.JoinMatch(&req); err != nil {
+		util.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	util.OK(w, map[string]string{"message": "报名成功"})
+}
+
 // MatchDetail 获取比赛详情
 func MatchDetail(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPut {

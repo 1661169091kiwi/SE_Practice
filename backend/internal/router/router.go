@@ -60,6 +60,12 @@ func New() http.Handler {
 	mux.Handle("/api/matches/delete", middleware.RoleAuth("admin")(http.HandlerFunc(handler.DeleteMatch)))
 	// 保护更新比分接口（需采集员角色）
 	mux.Handle("/api/matches/update-score/", middleware.RoleAuth("collector")(http.HandlerFunc(handler.UpdateMatchScore)))
+	// 运动员参加的比赛列表
+	mux.HandleFunc("/api/athlete/matches", handler.AthleteMatches)
+	// 运动员可报名的比赛列表
+	mux.HandleFunc("/api/athlete/available-matches", handler.AvailableMatchesForAthlete)
+	// 运动员报名参加比赛
+	mux.HandleFunc("/api/athlete/join-match", handler.JoinMatch)
 
 	// match data (积分榜等)
 	mux.HandleFunc("/api/match/data", handler.GetMatchData)

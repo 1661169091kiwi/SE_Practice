@@ -49,6 +49,143 @@ func (s *MatchService) ListMatchesByEvent(eventID int64, view string) ([]model.M
 	return list, nil
 }
 
+// GetAthleteMatches 获取运动员参加的比赛列表
+func (s *MatchService) GetAthleteMatches(studentID string, view string) ([]model.Match, error) {
+	matches, err := s.matchRepo.GetAthleteMatches(studentID)
+	if err != nil {
+		return nil, err
+	}
+	// 应用状态计算
+	for i := range matches {
+		matches[i].Status = s.computeAutoStatusForView(&matches[i], view)
+	}
+	return matches, nil
+}
+
+// GetAvailableMatchesForAthlete 获取运动员可以报名的比赛列表（所属队伍的比赛）
+func (s *MatchService) GetAvailableMatchesForAthlete(studentID string, view string) ([]model.Match, error) {
+	// 1. 获取运动员所属的队伍
+	userRepo := repo.NewUserRepo()
+	athletes, err := userRepo.ListAthletesByStudentID(studentID)
+	if err != nil {
+		return nil, err
+	}
+	if len(athletes) == 0 {
+		return []model.Match{}, nil // 不是运动员，返回空列表
+	}
+
+	// 2. 收集所有队伍ID
+	teamIDs := make(map[int64]bool)
+	for _, athlete := range athletes {
+		// 只包含已批准的运动员身份
+		teamIDs[athlete.TeamID] = true
+	}
+
+	// 3. 查询这些队伍参与的比赛
+	var allMatches []model.Match
+	for teamID := range teamIDs {
+		matches, err := s.matchRepo.GetMatchesByTeam(teamID)
+		if err != nil {
+			continue // 忽略错误，继续查询其他队伍
+		}
+		allMatches = append(allMatches, matches...)
+	}
+
+	// 4. 去重并过滤已报名的比赛
+	existingMatches, err := s.matchRepo.GetAthleteMatches(studentID)
+	if err == nil {
+		existingMatchMap := make(map[int64]bool)
+		for _, m := range existingMatches {
+			existingMatchMap[m.ID] = true
+		}
+		var filteredMatches []model.Match
+		for _, m := range allMatches {
+			if !existingMatchMap[m.ID] {
+				filteredMatches = append(filteredMatches, m)
+			}
+		}
+		allMatches = filteredMatches
+	}
+
+	// 5. 应用状态计算
+	for i := range allMatches {
+		allMatches[i].Status = s.computeAutoStatusForView(&allMatches[i], view)
+	}
+
+	return allMatches, nil
+}
+
+// JoinMatch 运动员报名参加比赛
+func (s *MatchService) JoinMatch(req *model.JoinMatchRequest) error {
+	// 1. 验证比赛是否存在
+	match, err := s.matchRepo.GetMatchByID(req.MatchID)
+	if err != nil {
+		return err
+	}
+	if match == nil {
+		return errors.New("比赛不存在")
+	}
+
+	// 2. 验证运动员是否属于比赛的两个队伍之一
+	if match.TeamAID != req.TeamID && match.TeamBID != req.TeamID {
+		return errors.New("您不属于该比赛的任何一方队伍")
+	}
+
+	// 3. 验证运动员是否属于该队伍且已批准
+	userRepo := repo.NewUserRepo()
+	athletes, err := userRepo.ListAthletesByStudentID(req.StudentID)
+	if err != nil {
+		return err
+	}
+	
+	isTeamMember := false
+	var athleteID int64
+	for _, athlete := range athletes {
+		if athlete.TeamID == req.TeamID {
+			athleteID = athlete.ID
+			// 检查是否已批准
+			teamMembers, err := userRepo.ListTeamMembers(req.TeamID)
+			if err == nil {
+				for _, tm := range teamMembers {
+					if tm.AthleteID == athlete.ID && tm.IsApproved && tm.IsActive {
+						isTeamMember = true
+						break
+					}
+				}
+			}
+			if isTeamMember {
+				break
+			}
+		}
+	}
+	if !isTeamMember || athleteID == 0 {
+		return errors.New("您不是该队伍的已批准成员")
+	}
+
+	// 4. 检查是否已经报名
+	lineupRepo := repo.NewLineupRepo()
+	lineups, err := lineupRepo.ListByMatch(req.MatchID)
+	if err == nil {
+		for _, lineup := range lineups {
+			if lineup.StudentID == req.StudentID && lineup.MatchID == req.MatchID {
+				return errors.New("您已经报名参加该比赛")
+			}
+		}
+	}
+
+	// 5. 创建阵容记录
+	lineup := model.MatchLineup{
+		MatchID:      req.MatchID,
+		TeamID:       req.TeamID,
+		StudentID:    req.StudentID,
+		Position:     req.Position,
+		JerseyNumber: req.JerseyNumber,
+		IsStarting:   req.IsStarting,
+	}
+
+	return lineupRepo.Upsert(lineup)
+}
+
 // CreateMatch 创建比赛
 func (s *MatchService) CreateMatch(req *model.CreateMatchRequest) (*model.Match, error) {
 	// 验证赛事是否存在

@@ -124,3 +124,13 @@ type SubscribeResponse struct {
 	MatchID     string `json:"matchId"`
 	OperateType int    `json:"operateType"`
 }
+
+// JoinMatchRequest 运动员报名参加比赛请求
+type JoinMatchRequest struct {
+	StudentID    string `json:"student_id" binding:"required"`
+	MatchID      int64  `json:"match_id" binding:"required"`
+	TeamID       int64  `json:"team_id" binding:"required"`
+	Position     string `json:"position"`
+	JerseyNumber string `json:"jersey_number"`
+	IsStarting   bool   `json:"is_starting"`
+}

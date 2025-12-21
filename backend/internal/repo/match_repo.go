@@ -301,6 +301,95 @@ WHERE ext.match_id = ?`
 	return lineups, nil
 }
 
+// GetAthleteMatches 获取运动员参加的比赛列表
+func (r *MatchRepo) GetAthleteMatches(studentID string) ([]model.Match, error) {
+	query := `
+		SELECT DISTINCT m.match_id, m.event_id, e.sport_id, m.match_name, COALESCE(m.round, ''), m.match_time,
+		       m.team_a_id, ta.team_name, m.team_b_id, tb.team_name, m.status,
+		       m.score_team_a, m.score_team_b, m.half_score_team_a, m.half_score_team_b,
+		       COALESCE(m.collector1_id, 0), COALESCE(m.collector2_id, 0)
+		FROM match_lineups ml
+		JOIN matches m ON ml.match_id = m.match_id
+		JOIN events e ON m.event_id = e.event_id
+		LEFT JOIN teams ta ON m.team_a_id = ta.team_id
+		LEFT JOIN teams tb ON m.team_b_id = tb.team_id
+		WHERE ml.student_id = ?
+		ORDER BY m.match_time DESC
+	`
+
+	rows, err := db.Query(query, studentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var matches []model.Match
+	for rows.Next() {
+		var m model.Match
+		var taName, tbName sql.NullString
+		if err := rows.Scan(
+			&m.ID, &m.EventID, &m.SportID, &m.Name, &m.Round, &m.Time,
+			&m.TeamAID, &taName, &m.TeamBID, &tbName, &m.Status,
+			&m.ScoreA, &m.ScoreB, &m.HalfScoreA, &m.HalfScoreB,
+			&m.Collector1ID, &m.Collector2ID,
+		); err != nil {
+			return nil, err
+		}
+		if taName.Valid {
+			m.TeamAName = taName.String
+		}
+		if tbName.Valid {
+			m.TeamBName = tbName.String
+		}
+		matches = append(matches, m)
+	}
+	return matches, rows.Err()
+}
+
+// GetMatchesByTeam 获取某个队伍参与的所有比赛
+func (r *MatchRepo) GetMatchesByTeam(teamID int64) ([]model.Match, error) {
+	query := `
+		SELECT m.match_id, m.event_id, e.sport_id, m.match_name, COALESCE(m.round, ''), m.match_time,
+		       m.team_a_id, ta.team_name, m.team_b_id, tb.team_name, m.status,
+		       m.score_team_a, m.score_team_b, m.half_score_team_a, m.half_score_team_b,
+		       COALESCE(m.collector1_id, 0), COALESCE(m.collector2_id, 0)
+		FROM matches m
+		JOIN events e ON m.event_id = e.event_id
+		LEFT JOIN teams ta ON m.team_a_id = ta.team_id
+		LEFT JOIN teams tb ON m.team_b_id = tb.team_id
+		WHERE (m.team_a_id = ? OR m.team_b_id = ?)
+		ORDER BY m.match_time DESC
+	`
+
+	rows, err := db.Query(query, teamID, teamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var matches []model.Match
+	for rows.Next() {
+		var m model.Match
+		var taName, tbName sql.NullString
+		if err := rows.Scan(
+			&m.ID, &m.EventID, &m.SportID, &m.Name, &m.Round, &m.Time,
+			&m.TeamAID, &taName, &m.TeamBID, &tbName, &m.Status,
+			&m.ScoreA, &m.ScoreB, &m.HalfScoreA, &m.HalfScoreB,
+			&m.Collector1ID, &m.Collector2ID,
+		); err != nil {
+			return nil, err
+		}
+		if taName.Valid {
+			m.TeamAName = taName.String
+		}
+		if tbName.Valid {
+			m.TeamBName = tbName.String
+		}
+		matches = append(matches, m)
+	}
+	return matches, rows.Err()
+}
+
 // RecalculateStandings 重新计算赛事积分榜
 func (r *MatchRepo) RecalculateStandings(eventID int64) error {
 	// 1. 获取赛事的所有已结束比赛
