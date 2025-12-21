@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log"
+	"strings"
 
 	"se_practice/backend/internal/model"
 	"se_practice/backend/internal/repo"
@@ -27,6 +29,8 @@ var (
 	ErrFileTooLarge      = errors.New("file too large")
 	ErrInvalidFileType   = errors.New("invalid file type")
 	ErrUserNotFound      = errors.New("user not found")
+	ErrTeamNotFound      = errors.New("队伍不存在")
+	ErrAthleteExists     = errors.New("您已经申请过该运动项目和队伍的运动员身份，请勿重复申请")
 )
 
 // 使用标准库做一个简单的哈希（教学/作业用，生产环境建议用 bcrypt / argon2 等）
@@ -309,16 +313,47 @@ func (s *AuthService) DeleteCollector(studentID string) error {
 
 // ApplyAthlete 申请成为运动员
 func (s *AuthService) ApplyAthlete(req *model.ApplyAthleteRequest) error {
+	log.Printf("[ApplyAthlete] 开始处理申请: student_id=%s, sport_type=%s, team_id=%d", 
+		req.StudentID, req.SportType, req.TeamID)
+	
 	// 1. 检查用户是否存在
 	user, err := s.userRepo.GetUserByStudentID(req.StudentID)
 	if err != nil {
+		log.Printf("[ApplyAthlete] 查询用户失败: %v", err)
 		return err
 	}
 	if user == nil {
+		log.Printf("[ApplyAthlete] 用户不存在: %s", req.StudentID)
 		return ErrUserNotFound
 	}
 
-	// 2. 创建运动员记录
+	// 2. 检查队伍是否存在
+	team, err := s.userRepo.GetTeamByID(req.TeamID)
+	if err != nil {
+		log.Printf("[ApplyAthlete] 查询队伍失败: %v", err)
+		return err
+	}
+	if team == nil {
+		log.Printf("[ApplyAthlete] 队伍不存在: team_id=%d", req.TeamID)
+		return ErrTeamNotFound
+	}
+	log.Printf("[ApplyAthlete] 队伍存在: team_id=%d, team_name=%s", team.ID, team.TeamName)
+
+	// 3. 检查是否已经申请过（避免重复申请）
+	athletes, err := s.userRepo.ListAthletesByStudentID(req.StudentID)
+	if err != nil {
+		log.Printf("[ApplyAthlete] 查询已有运动员记录失败: %v", err)
+		return err
+	}
+	for _, a := range athletes {
+		if a.SportType == req.SportType && a.TeamID == req.TeamID {
+			log.Printf("[ApplyAthlete] 重复申请: student_id=%s, sport_type=%s, team_id=%d", 
+				req.StudentID, req.SportType, req.TeamID)
+			return ErrAthleteExists
+		}
+	}
+
+	// 4. 创建运动员记录
 	athlete := &model.Athlete{
 		StudentID:    req.StudentID,
 		SportType:    req.SportType,
@@ -327,15 +362,41 @@ func (s *AuthService) ApplyAthlete(req *model.ApplyAthleteRequest) error {
 		IsCaptain:    req.IsCaptain,
 	}
 
+	log.Printf("[ApplyAthlete] 创建运动员记录: %+v", athlete)
 	athleteID, err := s.userRepo.CreateAthlete(athlete)
 	if err != nil {
-		// 可能是重复申请，数据库唯一约束会报错
+		log.Printf("[ApplyAthlete] 创建运动员记录失败: %v", err)
+		// 检查是否是唯一约束错误（重复申请）
+		errStr := strings.ToLower(err.Error())
+		if strings.Contains(errStr, "duplicate entry") || strings.Contains(errStr, "unique_athlete") {
+			return ErrAthleteExists
+		}
+		// 检查是否是外键约束错误（队伍不存在）
+		if strings.Contains(errStr, "foreign key constraint") || strings.Contains(errStr, "cannot add or update") {
+			return ErrTeamNotFound
+		}
 		return err
 	}
+	log.Printf("[ApplyAthlete] 运动员记录创建成功: athlete_id=%d", athleteID)
 
-	// 3. 添加到队伍成员表 (默认待审核，is_active=false, is_approved=false)
+	// 5. 添加到队伍成员表 (默认待审核，is_active=false, is_approved=false)
+	log.Printf("[ApplyAthlete] 创建队伍成员记录: team_id=%d, athlete_id=%d", req.TeamID, athleteID)
 	_, err = s.userRepo.CreateTeamMember(req.TeamID, athleteID, false, false)
-	return err
+	if err != nil {
+		log.Printf("[ApplyAthlete] 创建队伍成员记录失败: %v", err)
+		// 如果创建 team_member 失败，检查是否是唯一约束错误
+		errStr := strings.ToLower(err.Error())
+		if strings.Contains(errStr, "duplicate entry") || strings.Contains(errStr, "unique_team_member") {
+			return ErrAthleteExists
+		}
+		// 检查是否是外键约束错误
+		if strings.Contains(errStr, "foreign key constraint") || strings.Contains(errStr, "cannot add or update") {
+			return ErrTeamNotFound
+		}
+		return err
+	}
+	log.Printf("[ApplyAthlete] 申请成功: student_id=%s, athlete_id=%d", req.StudentID, athleteID)
+	return nil
 }
 
 // GetPendingAthletes 获取待审核的运动员申请

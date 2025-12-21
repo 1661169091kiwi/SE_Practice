@@ -382,7 +382,17 @@ func ApplyAthlete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := authService.ApplyAthlete(&req); err != nil {
-		util.Error(w, http.StatusInternalServerError, err.Error())
+		// 根据错误类型返回不同的状态码
+		switch err {
+		case service.ErrUserNotFound:
+			util.Error(w, http.StatusNotFound, err.Error())
+		case service.ErrTeamNotFound:
+			util.Error(w, http.StatusBadRequest, err.Error())
+		case service.ErrAthleteExists:
+			util.Error(w, http.StatusConflict, err.Error())
+		default:
+			util.Error(w, http.StatusInternalServerError, err.Error())
+		}
 		return
 	}
 

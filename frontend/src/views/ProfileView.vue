@@ -445,12 +445,19 @@ const handleApplyAthleteSubmit = async () => {
     if (res.code === 200) {
       showToast('申请提交成功')
       uiState.showAthleteModal = false
+      // 刷新用户信息以更新运动员状态
+      loadUserInfo()
     } else {
-      showToast(res.msg || '申请失败', 'error')
+      // 后端返回的是 message 字段
+      const errorMsg = res.message || res.msg || '申请失败'
+      showToast(errorMsg, 'error')
+      console.error('Apply athlete failed:', res)
     }
   } catch (err) {
     console.error('Apply athlete error:', err)
-    showToast('请求失败', 'error')
+    // 尝试从错误对象中提取消息
+    const errorMsg = err?.message || err?.response?.data?.message || '请求失败，请稍后重试'
+    showToast(errorMsg, 'error')
   } finally {
     uiState.isSubmitting = false
   }
