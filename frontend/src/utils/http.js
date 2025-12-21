@@ -1,0 +1,71 @@
+import router from '../router'
+import { useAuthStore } from '../stores/auth'
+
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081/api'
+
+function buildUrl(path, params) {
+  const url = /^https?:\/\//.test(path) ? path : `${BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`
+  if (params && typeof params === 'object') {
+    const usp = new URLSearchParams()
+    Object.entries(params).forEach(([k, v]) => {
+      if (v === undefined || v === null) return
+      if (Array.isArray(v)) v.forEach((item) => usp.append(k, item))
+      else usp.append(k, String(v))
+    })
+    const sep = url.includes('?') ? '&' : '?'
+    return `${url}${usp.toString() ? sep + usp.toString() : ''}`
+  }
+  return url
+}
+
+function getAuthHeader() {
+  const authStore = useAuthStore()
+  const token = authStore.token
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+async function handleResponse(res) {
+  if (res.status === 401) {
+    const authStore = useAuthStore()
+    authStore.clearAuth()
+    router.push('/login')
+    throw new Error('Unauthorized')
+  }
+  return res
+}
+
+async function request(path, { method = 'GET', headers = {}, body, params, auth = true } = {}) {
+  const url = buildUrl(path, params)
+  const finalHeaders = {
+    Accept: 'application/json',
+    ...(method !== 'GET' ? { 'Content-Type': 'application/json' } : {}),
+    ...(auth ? getAuthHeader() : {}),
+    ...headers,
+  }
+  const res = await fetch(url, { method, headers: finalHeaders, body: body !== undefined ? JSON.stringify(body) : undefined })
+  await handleResponse(res)
+  return res
+}
+
+export async function get(path, options = {}) {
+  const res = await request(path, { ...options, method: 'GET' })
+  return res.json()
+}
+
+export async function post(path, body, options = {}) {
+  const res = await request(path, { ...options, method: 'POST', body })
+  return res.json()
+}
+
+export async function put(path, body, options = {}) {
+  const res = await request(path, { ...options, method: 'PUT', body })
+  return res.json()
+}
+
+export async function del(path, body, options = {}) {
+  const res = await request(path, { ...options, method: 'DELETE', body })
+  return res.json()
+}
+
+const httpDelete = del
+export default { get, post, put, delete: httpDelete }

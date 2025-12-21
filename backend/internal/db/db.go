@@ -1,12 +1,15 @@
 package db
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	mysql "github.com/go-sql-driver/mysql"
 )
 
 var DB *sql.DB
@@ -14,7 +17,7 @@ var DB *sql.DB
 // Init 初始化数据库连接
 func Init(dsn string) (*sql.DB, error) {
 	var err error
-	
+
 	// 创建数据库连接
 	DB, err = sql.Open("mysql", dsn)
 	if err != nil {
@@ -85,7 +88,7 @@ func BeginTransaction() (*sql.Tx, error) {
 	if DB == nil {
 		return nil, fmt.Errorf("database connection is nil")
 	}
-	return DB.Begin()
+	return DB.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 }
 
 // Insert 插入数据并返回自增ID
@@ -120,10 +123,12 @@ func IsDuplicateEntryError(err error) bool {
 	if err == nil {
 		return false
 	}
-	// MySQL错误码1062表示重复条目
-	return err.Error() == "Error 1062: Duplicate entry" || 
-	       err.Error() == "Error 1062" ||
-	       err.Error() == "1062"
+	var me *mysql.MySQLError
+	if errors.As(err, &me) {
+		return me.Number == 1062
+	}
+	s := err.Error()
+	return strings.Contains(s, "1062") || strings.Contains(s, "Duplicate entry")
 }
 
 // IsForeignKeyError 检查是否为外键约束错误
@@ -131,10 +136,12 @@ func IsForeignKeyError(err error) bool {
 	if err == nil {
 		return false
 	}
-	// MySQL错误码1452表示外键约束失败
-	return err.Error() == "Error 1452: Cannot add or update a child row" ||
-	       err.Error() == "Error 1452" ||
-	       err.Error() == "1452"
+	var me *mysql.MySQLError
+	if errors.As(err, &me) {
+		return me.Number == 1452
+	}
+	s := err.Error()
+	return strings.Contains(s, "1452") || strings.Contains(s, "foreign key constraint fails")
 }
 
 // TableExists 检查表是否存在
@@ -158,5 +165,3 @@ func GetTableRowCount(tableName string) (int64, error) {
 	}
 	return count, nil
 }
-
-

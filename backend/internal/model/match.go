@@ -6,11 +6,14 @@ import "time"
 type Match struct {
 	ID           int64     `json:"match_id"`
 	EventID      int64     `json:"event_id"`
+	SportID      int64     `json:"sport_id"`
 	Name         string    `json:"match_name"`
 	Round        string    `json:"round"`
 	Time         time.Time `json:"match_time"`
 	TeamAID      int64     `json:"team_a_id"`
+	TeamAName    string    `json:"team_a_name"`
 	TeamBID      int64     `json:"team_b_id"`
+	TeamBName    string    `json:"team_b_name"`
 	ScoreA       int       `json:"score_team_a"`
 	ScoreB       int       `json:"score_team_b"`
 	HalfScoreA   int       `json:"half_score_team_a"`
@@ -92,6 +95,13 @@ type SubscribedMatchItem struct {
 	AwayTeam    TeamWrapper `json:"awayTeam"`    // 客队信息
 	MatchStatus string      `json:"matchStatus"` // 比赛赛况 (1-0 / VS)
 	MatchState  string      `json:"matchState"`  // 比赛状态 (未开始/进行中/已结束)
+	SportID     int64       `json:"sportId"`     // 运动类型ID
+	ScoreA      int         `json:"scoreA"`      // 主队比分
+	ScoreB      int         `json:"scoreB"`      // 客队比分
+
+	// Internal fields for service processing
+	RawTime   time.Time `json:"-"`
+	RawStatus string    `json:"-"`
 }
 
 // TeamWrapper 队伍信息包装 (for SubscribedMatchItem)
@@ -103,7 +113,8 @@ type TeamWrapper struct {
 // SubscribeRequest 订阅/取消订阅请求
 type SubscribeRequest struct {
 	StudentID   string `json:"studentId"`   // 用户学号
-	MatchID     string `json:"matchId"`     // 比赛唯一编号
+	MatchID     string `json:"matchId"`     // 比赛唯一编号 (或者使用 EventID)
+	EventID     int64  `json:"eventId"`     // 赛事ID (优先使用)
 	OperateType int    `json:"operateType"` // 0=新增订阅，1=取消订阅
 }
 

@@ -97,6 +97,11 @@ func (s *EventService) ListEvents(status string) ([]model.Event, error) {
 	return s.eventRepo.ListEvents(status)
 }
 
+// DeleteEvent 删除赛事
+func (s *EventService) DeleteEvent(id int64) error {
+	return s.eventRepo.DeleteEvent(id)
+}
+
 // UpdateEventStatus 更新赛事状态
 func (s *EventService) UpdateEventStatus(id int64, status string) error {
 	if !isValidEventStatus(status) {
@@ -113,6 +118,37 @@ func (s *EventService) UpdateEventStatus(id int64, status string) error {
 	}
 
 	return s.eventRepo.UpdateEventStatus(id, status)
+}
+
+// UpdateEvent 更新赛事信息
+func (s *EventService) UpdateEvent(id int64, req *model.CreateEventRequest) error {
+	// 检查赛事是否存在
+	event, err := s.eventRepo.GetEventByID(id)
+	if err != nil {
+		return err
+	}
+	if event == nil {
+		return ErrEventNotFound
+	}
+
+	// 验证参数
+	if req.EventName == "" || req.SportID <= 0 {
+		return errors.New("event name and sport id are required")
+	}
+	if req.StartDate.After(req.EndDate) {
+		return errors.New("start date must be before end date")
+	}
+
+	// 更新字段
+	event.Name = req.EventName
+	event.SportID = req.SportID
+	event.Season = req.Season
+	event.Round = req.Round
+	event.Format = req.Format
+	event.StartDate = req.StartDate
+	event.EndDate = req.EndDate
+
+	return s.eventRepo.UpdateEvent(event)
 }
 
 func isValidEventStatus(status string) bool {

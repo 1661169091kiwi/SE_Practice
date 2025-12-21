@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS teams (
     description TEXT,
     created_by VARCHAR(20) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_approved BOOLEAN DEFAULT FALSE,
     FOREIGN KEY (sport_id) REFERENCES sports(sport_id),
     FOREIGN KEY (created_by) REFERENCES users(student_id)
 );

@@ -4,13 +4,16 @@ import "time"
 
 // User 用户数据模型
 type User struct {
-	StudentID string    `json:"student_id"`
-	Password  string    `json:"-"` // 密码不返回给前端
-	Name      string    `json:"name"`
-	College   string    `json:"college"`
-	Grade     string    `json:"grade"`
-	AvatarURL string    `json:"avatar_url"`
-	CreatedAt time.Time `json:"created_at"`
+	StudentID   string    `json:"student_id"`
+	Password    string    `json:"-"` // 密码不返回给前端
+	Name        string    `json:"name"`
+	College     string    `json:"college"`
+	Grade       string    `json:"grade"`
+	Role        string    `json:"role"`
+	Roles       []string  `json:"roles"`
+	AvatarURL   string    `json:"avatar_url"`
+	ApplyStatus string    `json:"apply_status,omitempty"` // none, pending, approved
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // RegisterRequest 注册请求
@@ -68,17 +71,13 @@ type UpdateCollegeResponse struct {
 	Message   string `json:"message"`
 }
 
-// Team 队伍模型
-type Team struct {
-	ID          int64     `json:"team_id"`
-	TeamName    string    `json:"team_name"`
-	SportID     int64     `json:"sport_id"`
-	College     string    `json:"college"`
-	TeamType    string    `json:"team_type"`
-	AvatarURL   string    `json:"avatar_url"`
-	Description string    `json:"description"`
-	CreatedBy   string    `json:"created_by"`
-	CreatedAt   time.Time `json:"created_at"`
+// ApplyAthleteRequest 申请成为运动员请求
+type ApplyAthleteRequest struct {
+	StudentID    string `json:"student_id" binding:"required"`
+	SportType    string `json:"sport_type" binding:"required"`
+	TeamID       int64  `json:"team_id" binding:"required"`
+	JerseyNumber string `json:"jersey_number"`
+	IsCaptain    bool   `json:"is_captain"`
 }
 
 // Athlete 运动员信息
@@ -94,11 +93,23 @@ type Athlete struct {
 
 // TeamMember 队伍成员信息
 type TeamMember struct {
-	ID        int64     `json:"team_member_id"`
-	TeamID    int64     `json:"team_id"`
-	AthleteID int64     `json:"athlete_id"`
-	JoinDate  time.Time `json:"join_date"`
-	IsActive  bool      `json:"is_active"`
+	ID         int64     `json:"team_member_id"`
+	TeamID     int64     `json:"team_id"`
+	AthleteID  int64     `json:"athlete_id"`
+	JoinDate   time.Time `json:"join_date"`
+	IsActive   bool      `json:"is_active"`
+	IsApproved bool      `json:"is_approved"`
+}
+
+// PendingAthleteApplication 待审核运动员申请
+type PendingAthleteApplication struct {
+	TeamMemberID int64     `json:"team_member_id"`
+	StudentID    string    `json:"student_id"`
+	Name         string    `json:"name"`
+	TeamID       int64     `json:"team_id"`
+	TeamName     string    `json:"team_name"`
+	SportType    string    `json:"sport_type"`
+	ApplyTime    time.Time `json:"apply_time"`
 }
 
 // Collector 采集员
@@ -115,4 +126,12 @@ type Admin struct {
 	StudentID   string `json:"student_id"`
 	Role        string `json:"role"`
 	Permissions string `json:"permissions"`
+}
+
+// CollectorApplication 采集员申请信息（用于管理员查看）
+type CollectorApplication struct {
+	StudentID string    `json:"student_id"`
+	Name      string    `json:"name"`
+	College   string    `json:"college"`
+	ApplyTime time.Time `json:"apply_time"`
 }

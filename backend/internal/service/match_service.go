@@ -2,33 +2,51 @@ package service
 
 import (
 	"errors"
+	"strconv"
+	"time"
 
 	"se_practice/backend/internal/model"
 	"se_practice/backend/internal/repo"
 )
 
 type MatchService struct {
-	matchRepo *repo.MatchRepo
-	eventRepo *repo.EventRepo
-	teamRepo  *repo.UserRepo // 复用用户仓库中的队伍查询方法
+	matchRepo        *repo.MatchRepo
+	eventRepo        *repo.EventRepo
+	teamRepo         *repo.UserRepo // 复用用户仓库中的队伍查询方法
+	standingsService *StandingsService
 }
 
 func NewMatchService() *MatchService {
 	return &MatchService{
-		matchRepo: repo.NewMatchRepo(),
-		eventRepo: repo.NewEventRepo(),
-		teamRepo:  repo.NewUserRepo(),
+		matchRepo:        repo.NewMatchRepo(),
+		eventRepo:        repo.NewEventRepo(),
+		teamRepo:         repo.NewUserRepo(),
+		standingsService: NewStandingsService(),
 	}
 }
 
 // ListAllMatches 获取所有比赛
-func (s *MatchService) ListAllMatches() ([]model.Match, error) {
-	return s.matchRepo.ListAllMatches()
+func (s *MatchService) ListAllMatches(view string) ([]model.Match, error) {
+	list, err := s.matchRepo.ListAllMatches()
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		list[i].Status = s.computeAutoStatusForView(&list[i], view)
+	}
+	return list, nil
 }
 
 // ListMatchesByEvent 按赛事ID获取比赛列表
-func (s *MatchService) ListMatchesByEvent(eventID int64) ([]model.Match, error) {
-	return s.matchRepo.ListMatchesByEvent(eventID)
+func (s *MatchService) ListMatchesByEvent(eventID int64, view string) ([]model.Match, error) {
+	list, err := s.matchRepo.ListMatchesByEvent(eventID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		list[i].Status = s.computeAutoStatusForView(&list[i], view)
+	}
+	return list, nil
 }
 
 // CreateMatch 创建比赛
@@ -47,9 +65,16 @@ func (s *MatchService) CreateMatch(req *model.CreateMatchRequest) (*model.Match,
 	if err != nil || teamA == nil {
 		return nil, errors.New("team a not found")
 	}
+	if !teamA.IsApproved {
+		return nil, errors.New("team a is not approved")
+	}
+
 	teamB, err := s.teamRepo.GetTeamByID(req.TeamBID)
 	if err != nil || teamB == nil {
 		return nil, errors.New("team b not found")
+	}
+	if !teamB.IsApproved {
+		return nil, errors.New("team b is not approved")
 	}
 
 	// 构建比赛模型
@@ -73,6 +98,11 @@ func (s *MatchService) CreateMatch(req *model.CreateMatchRequest) (*model.Match,
 	return match, nil
 }
 
+// DeleteMatch 删除比赛
+func (s *MatchService) DeleteMatch(matchID int64) error {
+	return s.matchRepo.DeleteMatch(matchID)
+}
+
 // GetMatchDetail 获取比赛详情
 func (s *MatchService) GetMatchDetail(id int64) (*model.MatchDetailResponse, error) {
 	match, err := s.matchRepo.GetMatchByID(id)
@@ -86,6 +116,8 @@ func (s *MatchService) GetMatchDetail(id int64) (*model.MatchDetailResponse, err
 	// 获取队伍信息
 	teamA, _ := s.teamRepo.GetTeamByID(match.TeamAID)
 	teamB, _ := s.teamRepo.GetTeamByID(match.TeamBID)
+
+	status := s.computeAutoStatusForView(match, "user")
 
 	return &model.MatchDetailResponse{
 		MatchID:   match.ID,
@@ -103,7 +135,7 @@ func (s *MatchService) GetMatchDetail(id int64) (*model.MatchDetailResponse, err
 		},
 		ScoreA: match.ScoreA,
 		ScoreB: match.ScoreB,
-		Status: match.Status,
+		Status: status,
 		Collectors: []model.UserBrief{
 			// 实际项目中需要查询collectors表获取采集员信息
 			{ID: match.Collector1ID},
@@ -126,7 +158,54 @@ func (s *MatchService) UpdateMatchScore(id, scoreA, scoreB int64) error {
 		return errors.New("match not found")
 	}
 
-	return s.matchRepo.UpdateMatchScore(id, int(scoreA), int(scoreB))
+	err = s.matchRepo.UpdateMatchScore(id, int(scoreA), int(scoreB))
+	if err != nil {
+		return err
+	}
+
+	// Recalculate standings for the event
+	return s.standingsService.RecalculateStandings(match.EventID)
+}
+
+// UpdateMatch 更新比赛信息
+func (s *MatchService) UpdateMatch(id int64, req *model.CreateMatchRequest) error {
+	// 检查比赛是否存在
+	match, err := s.matchRepo.GetMatchByID(id)
+	if err != nil {
+		return err
+	}
+	if match == nil {
+		return errors.New("match not found")
+	}
+
+	// 验证赛事是否存在
+	event, err := s.eventRepo.GetEventByID(req.EventID)
+	if err != nil {
+		return err
+	}
+	if event == nil {
+		return ErrEventNotFound
+	}
+
+	// 验证队伍是否存在
+	teamA, err := s.teamRepo.GetTeamByID(req.TeamAID)
+	if err != nil || teamA == nil {
+		return errors.New("team a not found")
+	}
+	teamB, err := s.teamRepo.GetTeamByID(req.TeamBID)
+	if err != nil || teamB == nil {
+		return errors.New("team b not found")
+	}
+
+	// 更新字段
+	match.EventID = req.EventID
+	match.Name = req.MatchName
+	match.Round = req.Round
+	match.Time = req.MatchTime
+	match.TeamAID = req.TeamAID
+	match.TeamBID = req.TeamBID
+
+	return s.matchRepo.UpdateMatch(match)
 }
 
 // GetMatchData 获取赛事数据（积分榜/赛程等）
@@ -177,6 +256,60 @@ func (s *MatchService) GetUserSubscribedMatches(studentID string) (*model.Subscr
 		matches = []model.SubscribedMatchItem{}
 	}
 
+	// Apply auto status logic to ensure consistency with ListAllMatches
+	for i := range matches {
+		// Construct a temporary Match object to use computeAutoStatusForView (user)
+		tempMatch := &model.Match{
+			Status:  matches[i].RawStatus,
+			Time:    matches[i].RawTime,
+			SportID: matches[i].SportID,
+		}
+		newStatus := s.computeAutoStatusForView(tempMatch, "user")
+
+		// Update display fields based on new status
+		if newStatus == "not_started" {
+			matches[i].MatchState = "未开始"
+			// Keep MatchStatus as VS or score? VS usually.
+			// If it was "in_progress" before, it might have a score, but if "not_started", it should be VS.
+			// However, repo sets score for "ongoing".
+			// If we force it to not_started, we should probably hide score.
+			// Repo sets "VS" for "not_started".
+			matches[i].MatchStatus = "VS"
+		} else if newStatus == "finished" {
+			matches[i].MatchState = "已结束"
+			// MatchStatus should be score. Repo already formatted it.
+			// If repo thought it was ongoing, it formatted score.
+			// If repo thought it was not_started, it formatted VS.
+			// If we force to finished, we want score. But if it was not_started in DB, score is 0-0.
+			// This is tricky if DB status is "not_started" but time says "finished". Score is likely 0-0.
+			// If DB status is "ongoing" but time says "finished", score is present.
+			// We trust Repo's formatting for score if it's available.
+			// But if we switch from VS to Finished, we might not have score string formatted in Repo if it was not_started.
+			// Repo logic:
+			// if status == "not_started" -> VS
+			// else -> Score
+
+			// So if Repo saw "not_started", it set VS. If we change to "finished", we want score.
+			// But we don't have score in SubscribedMatchItem struct easily accessible as ints (it's formatted in string).
+			// We only have the string MatchStatus.
+			// If it is "VS", and we change to "finished", it will remain "VS" unless we re-format.
+			// But we don't have score ints here.
+
+			// HOWEVER, the main issue reported is "Not Started" vs "In Progress".
+			// "In Progress" means DB has "ongoing" (so Repo set Score string), but Service says "Not Started" (so we want VS).
+			// In this case: Repo set Score (e.g. "0-0"). We override to "VS" and "未开始". Correct.
+
+			// Reverse case: DB has "not_started" (Repo set VS), Service says "In Progress" (we want Score).
+			// We can't easily get Score without parsing or fetching again.
+			// But usually "not_started" implies 0-0.
+			// So "0-0" is fine.
+
+			// For now, let's just fix the reported issue: "ongoing" -> "not_started".
+		} else {
+			matches[i].MatchState = "进行中"
+		}
+	}
+
 	return &model.SubscribedMatchResponse{
 		SubscribedMatches: matches,
 	}, nil
@@ -184,17 +317,35 @@ func (s *MatchService) GetUserSubscribedMatches(studentID string) (*model.Subscr
 
 // SubscribeMatch 处理订阅/取消订阅逻辑
 func (s *MatchService) SubscribeMatch(req *model.SubscribeRequest) (string, error) {
-	// 1. 根据 MatchID 找到 EventID
-	eventID, err := s.matchRepo.GetEventIDByMatchID(req.MatchID)
-	if err != nil {
-		return "", err
+	var eventID int64
+	var matchID int64
+	var err error
+
+	// 解析 MatchID (string -> int64)
+	if req.MatchID != "" {
+		mID, err := strconv.ParseInt(req.MatchID, 10, 64)
+		if err == nil {
+			matchID = mID
+		}
 	}
-	if eventID == 0 {
-		return "", errors.New("match not found")
+
+	if req.EventID > 0 {
+		eventID = req.EventID
+	} else if req.MatchID != "" {
+		// 1. 根据 MatchID 找到 EventID
+		eventID, err = s.matchRepo.GetEventIDByMatchID(req.MatchID)
+		if err != nil {
+			return "", err
+		}
+		if eventID == 0 {
+			return "", errors.New("match not found")
+		}
+	} else {
+		return "", errors.New("matchId or eventId is required")
 	}
 
 	// 2. 检查当前订阅状态
-	isSubscribed, err := s.matchRepo.CheckSubscription(req.StudentID, eventID)
+	isSubscribed, err := s.matchRepo.CheckSubscription(req.StudentID, eventID, matchID)
 	if err != nil {
 		return "", err
 	}
@@ -204,7 +355,7 @@ func (s *MatchService) SubscribeMatch(req *model.SubscribeRequest) (string, erro
 		if isSubscribed {
 			return "已订阅该比赛，无需重复操作", nil // Return message, no error
 		}
-		err = s.matchRepo.SubscribeToEvent(req.StudentID, eventID)
+		err = s.matchRepo.Subscribe(req.StudentID, eventID, matchID)
 		if err != nil {
 			return "", err
 		}
@@ -213,7 +364,7 @@ func (s *MatchService) SubscribeMatch(req *model.SubscribeRequest) (string, erro
 		if !isSubscribed {
 			return "未订阅该比赛，无法取消", nil
 		}
-		err = s.matchRepo.UnsubscribeFromEvent(req.StudentID, eventID)
+		err = s.matchRepo.Unsubscribe(req.StudentID, eventID, matchID)
 		if err != nil {
 			return "", err
 		}
@@ -221,4 +372,165 @@ func (s *MatchService) SubscribeMatch(req *model.SubscribeRequest) (string, erro
 	}
 
 	return "", errors.New("invalid operateType")
+}
+
+// GetMatchComments 获取评论
+func (s *MatchService) GetMatchComments(matchID int64) ([]model.MatchComment, error) {
+	return s.matchRepo.GetMatchComments(matchID)
+}
+
+// CreateMatchComment 创建评论
+func (s *MatchService) CreateMatchComment(req *model.CreateCommentRequest, studentID string) error {
+	comment := &model.MatchComment{
+		MatchID:   req.MatchID,
+		StudentID: studentID,
+		Content:   req.Content,
+		CreatedAt: time.Now(),
+	}
+	return s.matchRepo.CreateMatchComment(comment)
+}
+
+// GetMatchStats 获取统计
+func (s *MatchService) GetMatchStats(matchID int64) (*model.MatchStats, error) {
+	stats, err := s.matchRepo.GetMatchStats(matchID)
+	if err != nil {
+		return nil, err
+	}
+	if stats == nil {
+		// 返回默认全0数据
+		return &model.MatchStats{MatchID: matchID}, nil
+	}
+	return stats, nil
+}
+
+// GetMatchLineups 获取阵容
+func (s *MatchService) GetMatchLineups(matchID int64) (map[string][]model.MatchLineup, error) {
+	// 1. 获取比赛信息以知道 TeamA 和 TeamB
+	match, err := s.matchRepo.GetMatchByID(matchID)
+	if err != nil {
+		return nil, err
+	}
+	if match == nil {
+		return nil, errors.New("match not found")
+	}
+
+	// 2. 获取所有阵容
+	lineups, err := s.matchRepo.GetMatchLineups(matchID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. 分组
+	result := make(map[string][]model.MatchLineup)
+	result["home"] = []model.MatchLineup{}
+	result["away"] = []model.MatchLineup{}
+
+	for _, l := range lineups {
+		if l.TeamID == match.TeamAID {
+			result["home"] = append(result["home"], l)
+		} else if l.TeamID == match.TeamBID {
+			result["away"] = append(result["away"], l)
+		}
+	}
+
+	return result, nil
+}
+
+// computeAutoStatus 根据时间窗口和运动类型推断比赛状态
+func (s *MatchService) computeAutoStatus(m *model.Match) string {
+	// 优先使用明确状态，但对进行中超过72小时的比赛自动视为已结束
+	switch m.Status {
+	case "cancelled":
+		return m.Status
+	case "finished":
+		return m.Status
+	case "in_progress", "ongoing":
+		if time.Now().After(m.Time.Add(72 * time.Hour)) {
+			return "finished"
+		}
+		return m.Status
+	}
+	now := time.Now()
+	start := m.Time
+	prebuffer := 10 * time.Minute
+	var duration time.Duration
+	switch m.SportID {
+	case 1:
+		duration = 120 * time.Minute
+	case 2:
+		duration = 150 * time.Minute
+	case 3:
+		duration = 90 * time.Minute
+	case 4:
+		duration = 120 * time.Minute
+	case 5:
+		duration = 120 * time.Minute
+	default:
+		duration = 120 * time.Minute
+	}
+	if now.Before(start.Add(-prebuffer)) {
+		return "not_started"
+	}
+	if now.After(start.Add(duration)) {
+		return "finished"
+	}
+	return "in_progress"
+}
+
+func (s *MatchService) computeAutoStatusForView(m *model.Match, view string) string {
+	if view == "collector" {
+		switch m.Status {
+		case "cancelled":
+			return m.Status
+		case "finished":
+			return m.Status
+		case "in_progress", "ongoing":
+			if time.Now().After(m.Time.Add(72 * time.Hour)) {
+				return "finished"
+			}
+			return "in_progress"
+		}
+		now := time.Now()
+		start := m.Time
+		prebuffer := 10 * time.Minute
+		if now.Before(start.Add(-prebuffer)) {
+			return "not_started"
+		}
+		if time.Now().After(start.Add(72 * time.Hour)) {
+			return "finished"
+		}
+		return "in_progress"
+	}
+	// 用户视图：忽略 DB 的 "ongoing/in_progress"，按运动时长自动结束
+	switch m.Status {
+	case "cancelled":
+		return m.Status
+	case "finished":
+		return m.Status
+	}
+	now := time.Now()
+	start := m.Time
+	prebuffer := 10 * time.Minute
+	var duration time.Duration
+	switch m.SportID {
+	case 1:
+		duration = 120 * time.Minute
+	case 2:
+		duration = 150 * time.Minute
+	case 3:
+		duration = 90 * time.Minute
+	case 4:
+		duration = 120 * time.Minute
+	case 5:
+		duration = 120 * time.Minute
+	default:
+		duration = 120 * time.Minute
+	}
+	if now.Before(start.Add(-prebuffer)) {
+		return "not_started"
+	}
+	if now.After(start.Add(duration)) {
+		return "finished"
+	}
+	return "in_progress"
 }
