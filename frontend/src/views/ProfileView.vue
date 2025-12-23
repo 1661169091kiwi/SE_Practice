@@ -5,6 +5,7 @@ import { get, post } from '@/utils/http'
 import { useAuthStore } from '@/stores/auth'
 import MatchHeader from '../components/MatchHeader.vue'
 import TeamManagementModal from '../components/TeamManagementModal.vue'
+import TeamChat from '../components/TeamChat.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -72,6 +73,8 @@ const userInfo = reactive({
 })
 
 const myTeams = ref([])
+const myAthleteInfo = ref([]) // 运动员信息列表
+const teamCaptainStatus = ref({}) // 队伍ID -> 是否是队长
 const myMatches = ref([]) // 运动员参加的比赛列表
 const isLoadingMatches = ref(false)
 const availableMatches = ref([]) // 可报名的比赛列表
@@ -82,6 +85,11 @@ const joinMatchForm = reactive({
   position: '',
   jerseyNumber: '',
   isStarting: false
+})
+const showUpdateAthleteModal = ref(false)
+const currentAthleteTeam = ref(null)
+const athleteUpdateForm = reactive({
+  jerseyNumber: ''
 })
 
 // 密码修改表单
@@ -130,10 +138,140 @@ const sportsList = ref([]) // 需要获取运动列表，或者暂时硬编码
 const showTeamManagementModal = ref(false)
 const currentManagementTeam = ref(null)
 
+// 队内聊天弹窗状态
+const showTeamChatModal = ref(false)
+const currentChatTeam = ref(null)
+
 // 打开队伍管理
-const openTeamManagement = (team) => {
+const openTeamManagement = async (team) => {
   currentManagementTeam.value = team
+  // 检查是否是队长
+  await checkIfCaptain(team.team_id)
   showTeamManagementModal.value = true
+}
+
+// 打开队内聊天
+const openTeamChat = async (team) => {
+  currentChatTeam.value = team
+  // 检查是否是队长
+  await checkIfCaptain(team.team_id || team.id)
+  showTeamChatModal.value = true
+}
+
+// 检查是否是队长
+const checkIfCaptain = async (teamId) => {
+  try {
+    const res = await get(`/athlete/check-captain?team_id=${teamId}`)
+    if (res.code === 200 && res.data) {
+      teamCaptainStatus.value[teamId] = res.data.is_captain || false
+    }
+  } catch (err) {
+    console.error('Check captain error:', err)
+    teamCaptainStatus.value[teamId] = false
+  }
+}
+
+// 获取运动员信息
+const fetchMyAthleteInfo = async () => {
+  if (!userInfo.roles.includes('athlete')) {
+    return
+  }
+  try {
+    const res = await get('/athlete/info')
+    if (res.code === 200 && res.data) {
+      myAthleteInfo.value = res.data || []
+      // 为每个队伍检查是否是队长
+      for (const athlete of myAthleteInfo.value) {
+        if (athlete.team_id) {
+          await checkIfCaptain(athlete.team_id)
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Fetch athlete info error:', err)
+  }
+}
+
+// 打开更新运动员信息弹窗
+const openUpdateAthleteModal = async (team) => {
+  currentAthleteTeam.value = team
+  // 获取当前运动员在该队伍中的信息
+  try {
+    const res = await get(`/athlete/info/team?team_id=${team.team_id}`)
+    if (res.code === 200 && res.data) {
+      athleteUpdateForm.jerseyNumber = res.data.jersey_number || ''
+    }
+  } catch (err) {
+    console.error('Fetch athlete info by team error:', err)
+  }
+  showUpdateAthleteModal.value = true
+}
+
+// 更新运动员信息
+const handleUpdateAthleteInfo = async () => {
+  if (!currentAthleteTeam.value) return
+  
+  try {
+    const res = await post('/athlete/update', {
+      team_id: currentAthleteTeam.value.team_id,
+      jersey_number: athleteUpdateForm.jerseyNumber
+    })
+    if (res.code === 200) {
+      showToast('运动员信息更新成功')
+      showUpdateAthleteModal.value = false
+      await fetchMyAthleteInfo()
+    } else {
+      showToast(res.msg || '更新失败', 'error')
+    }
+  } catch (err) {
+    console.error('Update athlete info error:', err)
+    showToast('更新失败，请稍后重试', 'error')
+  }
+}
+
+// 退出队伍
+const handleLeaveTeam = async (team) => {
+  if (!confirm(`确定要退出队伍 "${team.team_name}" 吗？`)) {
+    return
+  }
+  
+  try {
+    const res = await post('/athlete/leave-team', {
+      team_id: team.team_id
+    })
+    if (res.code === 200) {
+      showToast('已成功退出队伍')
+      await fetchMyTeams()
+      await fetchMyAthleteInfo()
+    } else {
+      showToast(res.msg || '退出失败', 'error')
+    }
+  } catch (err) {
+    console.error('Leave team error:', err)
+    const errorMsg = err?.response?.data?.message || err?.message || '退出失败，请稍后重试'
+    showToast(errorMsg, 'error')
+  }
+}
+
+// 判断是否可以管理队伍（创建者或队长）
+const canManageTeam = (team) => {
+  const teamId = team.team_id || team.id
+  return team.created_by === userInfo.studentId || teamCaptainStatus.value[teamId] === true
+}
+
+// 获取队伍管理角色
+const getTeamManagementRole = (team) => {
+  if (userInfo.role === 'admin') {
+    return 'admin'
+  }
+  const teamId = team.team_id || team.id
+  if (teamCaptainStatus.value[teamId] === true) {
+    return 'captain'
+  }
+  if (team.created_by === userInfo.studentId) {
+    return 'captain' // 创建者也有管理权限
+  }
+  return 'member'
 }
 
 // 队伍更新回调
@@ -288,10 +426,11 @@ const loadUserInfo = async () => {
       // 只要是学生就可以尝试获取队伍（包括自己创建的待审核队伍）
       fetchMyTeams()
       
-      // 如果是运动员，获取参加的比赛和可报名的比赛
+      // 如果是运动员，获取参加的比赛和可报名的比赛，以及运动员信息
       if (userInfo.roles.includes('athlete')) {
         fetchMyMatches()
         fetchAvailableMatches()
+        fetchMyAthleteInfo()
       }
       
     } else {
@@ -733,23 +872,45 @@ onMounted(() => {
       <div v-if="myTeams.length > 0" class="my-teams-container">
         <h3 class="section-title">我的队伍</h3>
         <div class="teams-grid">
-          <div v-for="team in myTeams" :key="team.id" class="team-card">
+          <div v-for="team in myTeams" :key="team.team_id || team.id" class="team-card">
             <div class="team-avatar-container">
               <div v-if="!team.avatar_url" class="team-avatar-placeholder">
                 {{ team.team_name.substring(0, 1) }}
               </div>
               <img v-else :src="team.avatar_url" :alt="team.team_name" class="team-avatar">
+              <span v-if="teamCaptainStatus[team.team_id || team.id]" class="captain-badge">队长</span>
             </div>
             <div class="team-info">
               <div class="team-name">{{ team.team_name }}</div>
               <div class="team-college">{{ team.college }}</div>
-              <button 
-                v-if="team.created_by === userInfo.studentId" 
-                class="manage-team-btn" 
-                @click.stop="openTeamManagement(team)"
-              >
-                管理
-              </button>
+              <div class="team-actions">
+                <button 
+                  class="chat-team-btn" 
+                  @click.stop="openTeamChat(team)"
+                >
+                  队内聊天
+                </button>
+                <button 
+                  v-if="canManageTeam(team)" 
+                  class="manage-team-btn" 
+                  @click.stop="openTeamManagement(team)"
+                >
+                  管理
+                </button>
+                <button 
+                  class="update-athlete-btn" 
+                  @click.stop="openUpdateAthleteModal(team)"
+                >
+                  更新信息
+                </button>
+                <button 
+                  v-if="!teamCaptainStatus[team.team_id || team.id] || team.created_by !== userInfo.studentId"
+                  class="leave-team-btn" 
+                  @click.stop="handleLeaveTeam(team)"
+                >
+                  退出
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1200,11 +1361,57 @@ onMounted(() => {
     <TeamManagementModal 
       v-if="currentManagementTeam"
       v-model:visible="showTeamManagementModal"
-      :team-id="currentManagementTeam.team_id"
+      :team-id="currentManagementTeam.team_id || currentManagementTeam.id"
       :team-name="currentManagementTeam.team_name"
-      current-user-role="captain"
+      :current-user-role="getTeamManagementRole(currentManagementTeam)"
       @refresh="handleTeamUpdated"
     />
+
+    <!-- 队内聊天弹窗 -->
+    <div v-if="showTeamChatModal && currentChatTeam" class="team-chat-modal-overlay" @click.self="showTeamChatModal = false">
+      <div class="team-chat-modal-content">
+        <div class="team-chat-modal-header">
+          <h3>队内聊天 - {{ currentChatTeam.team_name }}</h3>
+          <button @click="showTeamChatModal = false" class="modal-close">×</button>
+        </div>
+        <TeamChat 
+          :team-id="currentChatTeam.team_id || currentChatTeam.id"
+          :team-name="currentChatTeam.team_name"
+          :is-captain="teamCaptainStatus[currentChatTeam.team_id || currentChatTeam.id] === true"
+        />
+      </div>
+    </div>
+
+    <!-- 更新运动员信息弹窗 -->
+    <div v-if="showUpdateAthleteModal" class="modal-overlay" @click.self="showUpdateAthleteModal = false">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 class="modal-title">更新运动员信息</h3>
+          <button @click="showUpdateAthleteModal = false" class="modal-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="currentAthleteTeam" class="form-group">
+            <label>队伍名称</label>
+            <input type="text" :value="currentAthleteTeam.team_name" disabled class="form-input" />
+          </div>
+          <div class="form-group">
+            <label>球衣号码</label>
+            <input 
+              v-model="athleteUpdateForm.jerseyNumber" 
+              type="text" 
+              placeholder="请输入球衣号码"
+              class="form-input"
+            />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="modal-btn cancel" @click="showUpdateAthleteModal = false">取消</button>
+          <button class="modal-btn primary" @click="handleUpdateAthleteInfo" :disabled="uiState.isSubmitting">
+            {{ uiState.isSubmitting ? '保存中...' : '保存' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1448,10 +1655,103 @@ onMounted(() => {
   align-items: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   transition: transform 0.2s;
+  position: relative;
 }
 
 .team-card:active {
   transform: scale(0.98);
+}
+
+.team-avatar-container {
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.captain-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #ff4d4f;
+  color: white;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.team-info {
+  width: 100%;
+  text-align: center;
+}
+
+.team-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.team-college {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 8px;
+}
+
+.team-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+.manage-team-btn,
+.update-athlete-btn,
+.leave-team-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.manage-team-btn {
+  background: #1890ff;
+  color: white;
+}
+
+.manage-team-btn:hover {
+  background: #40a9ff;
+}
+
+.update-athlete-btn {
+  background: #52c41a;
+  color: white;
+}
+
+.update-athlete-btn:hover {
+  background: #73d13d;
+}
+
+.leave-team-btn {
+  background: #ff4d4f;
+  color: white;
+}
+
+.leave-team-btn:hover {
+  background: #ff7875;
+}
+
+.chat-team-btn {
+  background: #722ed1;
+  color: white;
+}
+
+.chat-team-btn:hover {
+  background: #9254de;
 }
 
 /* 我参加的比赛样式 */
@@ -1864,6 +2164,45 @@ onMounted(() => {
   background-color: #ff4d4f;
   color: white;
   box-shadow: 0 4px 16px rgba(255, 77, 79, 0.3);
+}
+
+/* 队内聊天弹窗 */
+.team-chat-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.team-chat-modal-content {
+  width: 90%;
+  max-width: 900px;
+  height: 80vh;
+  background: white;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.team-chat-modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fafafa;
+}
+
+.team-chat-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
 }
 
 /* 密码修改弹窗 */

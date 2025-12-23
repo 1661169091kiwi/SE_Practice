@@ -158,11 +158,13 @@ func (r *TeamRepo) DeleteTeam(teamID int64) error {
 func (r *TeamRepo) GetTeamMembers(teamID int64) ([]model.TeamMemberDetail, error) {
 	query := `
 		SELECT tm.team_member_id, tm.team_id, tm.athlete_id, 
-		       u.student_id, u.name, u.college, a.sport_type, COALESCE(tm.join_date, ''), COALESCE(a.jersey_number, '')
+		       u.student_id, u.name, u.college, a.sport_type, COALESCE(tm.join_date, ''), COALESCE(a.jersey_number, ''),
+		       a.is_captain
 		FROM team_members tm
 		JOIN athletes a ON tm.athlete_id = a.athlete_id
 		JOIN users u ON a.student_id = u.student_id
-		WHERE tm.team_id = ? AND tm.is_active = TRUE
+		WHERE tm.team_id = ? AND tm.is_active = TRUE AND tm.is_approved = TRUE
+		ORDER BY a.is_captain DESC, tm.join_date ASC
 	`
 	rows, err := db.Query(query, teamID)
 	if err != nil {
@@ -176,6 +178,7 @@ func (r *TeamRepo) GetTeamMembers(teamID int64) ([]model.TeamMemberDetail, error
 		if err := rows.Scan(
 			&m.TeamMemberID, &m.TeamID, &m.AthleteID,
 			&m.StudentID, &m.Name, &m.College, &m.SportType, &m.JoinDate, &m.JerseyNumber,
+			&m.IsCaptain,
 		); err != nil {
 			return nil, err
 		}
@@ -188,7 +191,8 @@ func (r *TeamRepo) GetTeamMembers(teamID int64) ([]model.TeamMemberDetail, error
 func (r *TeamRepo) GetPendingTeamMembers(teamID int64) ([]model.TeamMemberDetail, error) {
 	query := `
 		SELECT tm.team_member_id, tm.team_id, tm.athlete_id, 
-		       u.student_id, u.name, u.college, a.sport_type, COALESCE(tm.join_date, ''), COALESCE(a.jersey_number, '')
+		       u.student_id, u.name, u.college, a.sport_type, COALESCE(tm.join_date, ''), COALESCE(a.jersey_number, ''),
+		       a.is_captain
 		FROM team_members tm
 		JOIN athletes a ON tm.athlete_id = a.athlete_id
 		JOIN users u ON a.student_id = u.student_id
@@ -206,6 +210,7 @@ func (r *TeamRepo) GetPendingTeamMembers(teamID int64) ([]model.TeamMemberDetail
 		if err := rows.Scan(
 			&m.TeamMemberID, &m.TeamID, &m.AthleteID,
 			&m.StudentID, &m.Name, &m.College, &m.SportType, &m.JoinDate, &m.JerseyNumber,
+			&m.IsCaptain,
 		); err != nil {
 			return nil, err
 		}
@@ -229,13 +234,19 @@ func (r *TeamRepo) RemoveMember(teamMemberID int64) error {
 
 // GetTeamMemberByID 根据ID获取成员信息
 func (r *TeamRepo) GetTeamMemberByID(memberID int64) (*model.TeamMemberDetail, error) {
-	query := `SELECT team_member_id, team_id, athlete_id, '' as student_id, '' as name, '' as college, '' as sport_type, COALESCE(join_date, '')
-	          FROM team_members WHERE team_member_id = ?`
-	// Note: We only need TeamID for permission check, so simple query is enough.
-	// If we need full details, we would join.
+	query := `
+		SELECT tm.team_member_id, tm.team_id, tm.athlete_id, 
+		       COALESCE(u.student_id, ''), COALESCE(u.name, ''), COALESCE(u.college, ''), 
+		       COALESCE(a.sport_type, ''), COALESCE(tm.join_date, ''), COALESCE(a.jersey_number, ''),
+		       COALESCE(a.is_captain, FALSE)
+		FROM team_members tm
+		LEFT JOIN athletes a ON tm.athlete_id = a.athlete_id
+		LEFT JOIN users u ON a.student_id = u.student_id
+		WHERE tm.team_member_id = ?
+	`
 	var m model.TeamMemberDetail
 	err := db.QueryRow(query, memberID).Scan(
-		&m.TeamMemberID, &m.TeamID, &m.AthleteID, &m.StudentID, &m.Name, &m.College, &m.SportType, &m.JoinDate,
+		&m.TeamMemberID, &m.TeamID, &m.AthleteID, &m.StudentID, &m.Name, &m.College, &m.SportType, &m.JoinDate, &m.JerseyNumber, &m.IsCaptain,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -244,4 +255,26 @@ func (r *TeamRepo) GetTeamMemberByID(memberID int64) (*model.TeamMemberDetail, e
 		return nil, err
 	}
 	return &m, nil
+}
+
+// IsTeamCaptain 检查用户是否是某个队伍的队长
+func (r *TeamRepo) IsTeamCaptain(studentID string, teamID int64) (bool, error) {
+	query := `
+		SELECT COUNT(*) 
+		FROM athletes a
+		JOIN team_members tm ON a.athlete_id = tm.athlete_id
+		WHERE a.student_id = ? AND a.team_id = ? AND a.is_captain = TRUE 
+		  AND tm.is_approved = TRUE AND tm.is_active = TRUE
+	`
+	var count int
+	err := db.QueryRow(query, studentID, teamID).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// GetTeamMembersWithCaptainInfo 获取队伍成员列表（包含队长信息）- 与GetTeamMembers相同，保留以兼容
+func (r *TeamRepo) GetTeamMembersWithCaptainInfo(teamID int64) ([]model.TeamMemberDetail, error) {
+	return r.GetTeamMembers(teamID)
 }

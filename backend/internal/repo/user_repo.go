@@ -296,3 +296,90 @@ func (r *UserRepo) DeleteCollector(studentID string) error {
 	_, err := db.Exec(query, studentID)
 	return err
 }
+
+// GetAthleteByID 根据athlete_id获取运动员信息
+func (r *UserRepo) GetAthleteByID(athleteID int64) (*model.Athlete, error) {
+	query := `SELECT a.athlete_id, a.student_id, a.sport_type, a.team_id, 
+	                 a.jersey_number, a.is_captain, t.team_name
+	          FROM athletes a
+	          LEFT JOIN teams t ON a.team_id = t.team_id
+	          WHERE a.athlete_id = ?`
+	var athlete model.Athlete
+	err := db.QueryRow(query, athleteID).Scan(
+		&athlete.ID, &athlete.StudentID, &athlete.SportType, &athlete.TeamID,
+		&athlete.JerseyNumber, &athlete.IsCaptain, &athlete.TeamName,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return &athlete, err
+}
+
+// GetAthleteByStudentIDAndTeamID 根据学号和队伍ID获取运动员信息
+func (r *UserRepo) GetAthleteByStudentIDAndTeamID(studentID string, teamID int64) (*model.Athlete, error) {
+	query := `SELECT a.athlete_id, a.student_id, a.sport_type, a.team_id, 
+	                 a.jersey_number, a.is_captain, t.team_name
+	          FROM athletes a
+	          LEFT JOIN teams t ON a.team_id = t.team_id
+	          WHERE a.student_id = ? AND a.team_id = ?`
+	var athlete model.Athlete
+	err := db.QueryRow(query, studentID, teamID).Scan(
+		&athlete.ID, &athlete.StudentID, &athlete.SportType, &athlete.TeamID,
+		&athlete.JerseyNumber, &athlete.IsCaptain, &athlete.TeamName,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return &athlete, err
+}
+
+// UpdateAthleteInfo 更新运动员信息
+func (r *UserRepo) UpdateAthleteInfo(athleteID int64, jerseyNumber string) error {
+	query := `UPDATE athletes SET jersey_number = ? WHERE athlete_id = ?`
+	_, err := db.Exec(query, jerseyNumber, athleteID)
+	return err
+}
+
+// IsCaptain 检查用户是否是某个队伍的队长
+func (r *UserRepo) IsCaptain(studentID string, teamID int64) (bool, error) {
+	query := `
+		SELECT COUNT(*) 
+		FROM athletes a
+		JOIN team_members tm ON a.athlete_id = tm.athlete_id
+		WHERE a.student_id = ? AND a.team_id = ? AND a.is_captain = TRUE 
+		  AND tm.is_approved = TRUE AND tm.is_active = TRUE
+	`
+	var count int
+	err := db.QueryRow(query, studentID, teamID).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// LeaveTeam 退出队伍（删除team_member记录）
+func (r *UserRepo) LeaveTeam(studentID string, teamID int64) error {
+	query := `
+		DELETE tm FROM team_members tm
+		JOIN athletes a ON tm.athlete_id = a.athlete_id
+		WHERE a.student_id = ? AND tm.team_id = ? AND tm.is_approved = TRUE
+	`
+	_, err := db.Exec(query, studentID, teamID)
+	return err
+}
+
+// GetTeamMemberByAthleteID 根据athlete_id获取team_member信息
+func (r *UserRepo) GetTeamMemberByAthleteID(athleteID int64, teamID int64) (*model.TeamMember, error) {
+	query := `SELECT team_member_id, team_id, athlete_id, join_date, is_active, is_approved
+	          FROM team_members 
+	          WHERE athlete_id = ? AND team_id = ?`
+	var member model.TeamMember
+	err := db.QueryRow(query, athleteID, teamID).Scan(
+		&member.ID, &member.TeamID, &member.AthleteID, &member.JoinDate,
+		&member.IsActive, &member.IsApproved,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return &member, err
+}

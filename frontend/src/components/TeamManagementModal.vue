@@ -75,7 +75,10 @@
             <tbody>
               <tr v-for="member in members" :key="member.team_member_id">
                 <td>{{ member.student_id }}</td>
-                <td>{{ member.name }}</td>
+                <td>
+                  {{ member.name }}
+                  <span v-if="member.is_captain" class="captain-tag">队长</span>
+                </td>
                 <td>{{ member.college }}</td>
                 <td>{{ member.sport_type }}</td>
                 <td>{{ member.jersey_number || '-' }}</td>
@@ -504,5 +507,16 @@ onMounted(() => {
 @keyframes slideUp {
   from { transform: translateY(20px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
+}
+
+.captain-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 6px;
+  background: #ff4d4f;
+  color: white;
+  font-size: 10px;
+  border-radius: 10px;
+  font-weight: 600;
 }
 </style>

@@ -126,6 +126,7 @@ func (s *TeamService) GetPendingTeamMembers(teamID int64, userID, role string) (
 		return s.teamRepo.GetPendingTeamMembers(teamID)
 	}
 
+	// 检查是否是队伍创建者或队长
 	team, err := s.teamRepo.GetTeamByID(teamID)
 	if err != nil {
 		return nil, err
@@ -134,14 +135,24 @@ func (s *TeamService) GetPendingTeamMembers(teamID int64, userID, role string) (
 		return nil, errors.New("team not found")
 	}
 
-	if team.CreatedBy != userID {
+	// 检查是否是创建者
+	if team.CreatedBy == userID {
+		return s.teamRepo.GetPendingTeamMembers(teamID)
+	}
+
+	// 检查是否是队长
+	isCaptain, err := s.teamRepo.IsTeamCaptain(userID, teamID)
+	if err != nil {
+		return nil, err
+	}
+	if !isCaptain {
 		return nil, errors.New("permission denied")
 	}
 
 	return s.teamRepo.GetPendingTeamMembers(teamID)
 }
 
-// ApproveMemberWithAuth 批准成员
+// ApproveMemberWithAuth 批准成员（支持管理员、创建者、队长）
 func (s *TeamService) ApproveMemberWithAuth(teamMemberID int64, userID, role string) error {
 	if role == "admin" {
 		return s.teamRepo.ApproveMember(teamMemberID)
@@ -163,8 +174,18 @@ func (s *TeamService) ApproveMemberWithAuth(teamMemberID int64, userID, role str
 		return errors.New("team not found")
 	}
 
-	if team.CreatedBy != userID {
-		return errors.New("permission denied")
+	// 检查是否是创建者
+	if team.CreatedBy == userID {
+		return s.teamRepo.ApproveMember(teamMemberID)
+	}
+
+	// 检查是否是队长
+	isCaptain, err := s.teamRepo.IsTeamCaptain(userID, member.TeamID)
+	if err != nil {
+		return err
+	}
+	if !isCaptain {
+		return errors.New("permission denied: only admin, team creator, or captain can approve members")
 	}
 
 	return s.teamRepo.ApproveMember(teamMemberID)
@@ -175,19 +196,11 @@ func (s *TeamService) RemoveMember(memberID int64) error {
 	return s.teamRepo.RemoveMember(memberID)
 }
 
-// RemoveMemberWithAuth 移除成员（带权限检查）
+// RemoveMemberWithAuth 移除成员（带权限检查，支持管理员、创建者、队长）
 func (s *TeamService) RemoveMemberWithAuth(memberID int64, userID, role string) error {
 	if role == "admin" {
 		return s.teamRepo.RemoveMember(memberID)
 	}
-
-	// Find which team this member belongs to
-	// We need a Repo method to get TeamID by TeamMemberID
-	// Or we can just get the member details first
-	// Assuming GetTeamMembers returns a list, maybe we add GetTeamMemberByID
-	// For now, let's assume we can fetch member info.
-	// Actually, team_repo has GetTeamMembers(teamID). It doesn't have GetMemberByID.
-	// Let's add GetTeamMemberByID to Repo.
 
 	member, err := s.teamRepo.GetTeamMemberByID(memberID)
 	if err != nil {
@@ -205,16 +218,26 @@ func (s *TeamService) RemoveMemberWithAuth(memberID int64, userID, role string) 
 		return errors.New("team not found")
 	}
 
-	if team.CreatedBy != userID {
-		return errors.New("permission denied")
+	// 检查是否是创建者
+	if team.CreatedBy == userID {
+		return s.teamRepo.RemoveMember(memberID)
+	}
+
+	// 检查是否是队长
+	isCaptain, err := s.teamRepo.IsTeamCaptain(userID, member.TeamID)
+	if err != nil {
+		return err
+	}
+	if !isCaptain {
+		return errors.New("permission denied: only admin, team creator, or captain can remove members")
 	}
 
 	return s.teamRepo.RemoveMember(memberID)
 }
 
-// UpdateTeamName 更新队伍名称
+// UpdateTeamName 更新队伍名称（支持管理员、创建者、队长）
 func (s *TeamService) UpdateTeamName(teamID int64, name, userID, role string) error {
-	// Verify permission: Admin or Creator
+	// Verify permission: Admin, Creator, or Captain
 	if role == "admin" {
 		return s.teamRepo.UpdateTeamName(teamID, name)
 	}
@@ -226,8 +249,19 @@ func (s *TeamService) UpdateTeamName(teamID int64, name, userID, role string) er
 	if team == nil {
 		return errors.New("team not found")
 	}
-	if team.CreatedBy != userID {
-		return errors.New("permission denied: not the team creator")
+
+	// 检查是否是创建者
+	if team.CreatedBy == userID {
+		return s.teamRepo.UpdateTeamName(teamID, name)
+	}
+
+	// 检查是否是队长
+	isCaptain, err := s.teamRepo.IsTeamCaptain(userID, teamID)
+	if err != nil {
+		return err
+	}
+	if !isCaptain {
+		return errors.New("permission denied: only admin, team creator, or captain can update team name")
 	}
 
 	return s.teamRepo.UpdateTeamName(teamID, name)

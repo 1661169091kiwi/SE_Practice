@@ -38,4 +38,5 @@ type TeamMemberDetail struct {
 	SportType    string `json:"sport_type"`
 	JoinDate     string `json:"join_date"`
 	JerseyNumber string `json:"jersey_number"`
+	IsCaptain    bool   `json:"is_captain"`
 }

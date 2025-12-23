@@ -66,6 +66,13 @@ func New() http.Handler {
 	mux.HandleFunc("/api/athlete/available-matches", handler.AvailableMatchesForAthlete)
 	// 运动员报名参加比赛
 	mux.HandleFunc("/api/athlete/join-match", handler.JoinMatch)
+	// 运动员相关功能
+	mux.Handle("/api/athlete/info", middleware.Auth(http.HandlerFunc(handler.GetMyAthleteInfo)))                    // 获取我的运动员信息
+	mux.Handle("/api/athlete/info/team", middleware.Auth(http.HandlerFunc(handler.GetMyAthleteInfoByTeam)))        // 获取我在指定队伍中的信息
+	mux.Handle("/api/athlete/update", middleware.Auth(http.HandlerFunc(handler.UpdateMyAthleteInfo)))             // 更新我的运动员信息
+	mux.Handle("/api/athlete/leave-team", middleware.Auth(http.HandlerFunc(handler.LeaveTeam)))                     // 退出队伍
+	mux.Handle("/api/athlete/team-members", middleware.Auth(http.HandlerFunc(handler.GetTeamMembersForAthlete)))   // 查看队伍成员
+	mux.Handle("/api/athlete/check-captain", middleware.Auth(http.HandlerFunc(handler.CheckIfCaptain)))             // 检查是否是队长
 
 	// match data (积分榜等)
 	mux.HandleFunc("/api/match/data", handler.GetMatchData)
@@ -80,5 +87,19 @@ func New() http.Handler {
 
 	// collector 命名空间入口：默认鉴权；POST 在 handler 内进行角色校验
 	mux.Handle("/api/collector/", middleware.Auth(http.HandlerFunc(handler.CollectorEntry)))
+
+	// 队内聊天相关功能
+	mux.Handle("/api/team/chat/messages", middleware.Auth(http.HandlerFunc(handler.CreateMessage)))           // 创建消息
+	mux.Handle("/api/team/chat/messages/list", middleware.Auth(http.HandlerFunc(handler.GetTeamMessages)))     // 获取消息列表
+	mux.Handle("/api/team/chat/messages/read", middleware.Auth(http.HandlerFunc(handler.MarkMessageAsRead)))  // 标记已读
+	mux.Handle("/api/team/chat/votes", middleware.Auth(http.HandlerFunc(handler.CreateVote)))                  // 创建投票
+	mux.Handle("/api/team/chat/votes/list", middleware.Auth(http.HandlerFunc(handler.GetTeamVotes)))          // 获取投票列表
+	mux.Handle("/api/team/chat/votes/vote", middleware.Auth(http.HandlerFunc(handler.Vote)))                 // 投票
+	mux.Handle("/api/team/chat/notifications", middleware.Auth(http.HandlerFunc(handler.CreateNotification))) // 创建通知
+	mux.Handle("/api/team/chat/notifications/list", middleware.Auth(http.HandlerFunc(handler.GetTeamNotifications))) // 获取通知列表
+	mux.Handle("/api/team/chat/leave-requests", middleware.Auth(http.HandlerFunc(handler.CreateLeaveRequest))) // 创建请假申请
+	mux.Handle("/api/team/chat/leave-requests/list", middleware.Auth(http.HandlerFunc(handler.GetLeaveRequests))) // 获取请假申请列表
+	mux.Handle("/api/team/chat/leave-requests/review", middleware.Auth(http.HandlerFunc(handler.ReviewLeaveRequest))) // 审核请假申请
+
 	return middleware.CORS(mux)
 }
