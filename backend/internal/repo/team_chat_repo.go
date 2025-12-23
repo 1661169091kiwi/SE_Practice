@@ -3,6 +3,7 @@ package repo
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"se_practice/backend/internal/db"
 	"se_practice/backend/internal/model"
 
@@ -177,6 +178,34 @@ func (r *TeamChatRepo) GetVoteByID(voteID int64) (*model.TeamVote, error) {
 	return &vote, nil
 }
 
+// GetVoteByMessageID 根据message_id获取投票
+func (r *TeamChatRepo) GetVoteByMessageID(messageID int64) (*model.TeamVote, error) {
+	query := `
+		SELECT v.vote_id, v.team_id, v.creator_id, COALESCE(u.name, ''), v.message_id, v.title, v.description, 
+		       v.options, v.is_multiple, v.deadline, v.status, v.created_at
+		FROM team_votes v
+		LEFT JOIN users u ON v.creator_id = u.student_id
+		WHERE v.message_id = ?
+	`
+	var vote model.TeamVote
+	var optionsJSON string
+	var deadline sql.NullTime
+	err := db.QueryRow(query, messageID).Scan(&vote.VoteID, &vote.TeamID, &vote.CreatorID, &vote.CreatorName,
+		&vote.MessageID, &vote.Title, &vote.Description, &optionsJSON, &vote.IsMultiple,
+		&deadline, &vote.Status, &vote.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	json.Unmarshal([]byte(optionsJSON), &vote.Options)
+	if deadline.Valid {
+		vote.Deadline = &deadline.Time
+	}
+	return &vote, nil
+}
+
 // CreateVoteRecord 创建投票记录
 func (r *TeamChatRepo) CreateVoteRecord(voteID int64, voterID string, selectedOptions []int) error {
 	optionsJSON, _ := json.Marshal(selectedOptions)
@@ -316,11 +345,12 @@ func (r *TeamChatRepo) GetLeaveRequests(teamID int64, applicantID string, status
 		var req model.LeaveRequest
 		var messageID sql.NullInt64
 		var reviewerID sql.NullString
+		var reviewerName sql.NullString
 		var reviewComment sql.NullString
 		var reviewedAt sql.NullTime
 		if err := rows.Scan(&req.LeaveID, &req.TeamID, &req.ApplicantID, &req.ApplicantName,
 			&messageID, &req.LeaveType, &req.StartDate, &req.EndDate, &req.Reason, &req.Status,
-			&reviewerID, &req.ReviewerName, &reviewComment, &reviewedAt, &req.CreatedAt); err != nil {
+			&reviewerID, &reviewerName, &reviewComment, &reviewedAt, &req.CreatedAt); err != nil {
 			return nil, err
 		}
 		if messageID.Valid {
@@ -328,6 +358,9 @@ func (r *TeamChatRepo) GetLeaveRequests(teamID int64, applicantID string, status
 		}
 		if reviewerID.Valid {
 			req.ReviewerID = &reviewerID.String
+		}
+		if reviewerName.Valid {
+			req.ReviewerName = reviewerName.String
 		}
 		if reviewComment.Valid {
 			req.ReviewComment = &reviewComment.String
@@ -354,11 +387,12 @@ func (r *TeamChatRepo) GetLeaveRequestByID(leaveID int64) (*model.LeaveRequest, 
 	var req model.LeaveRequest
 	var messageID sql.NullInt64
 	var reviewerID sql.NullString
+	var reviewerName sql.NullString
 	var reviewComment sql.NullString
 	var reviewedAt sql.NullTime
 	err := db.QueryRow(query, leaveID).Scan(&req.LeaveID, &req.TeamID, &req.ApplicantID, &req.ApplicantName,
 		&messageID, &req.LeaveType, &req.StartDate, &req.EndDate, &req.Reason, &req.Status,
-		&reviewerID, &req.ReviewerName, &reviewComment, &reviewedAt, &req.CreatedAt)
+		&reviewerID, &reviewerName, &reviewComment, &reviewedAt, &req.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -370,6 +404,53 @@ func (r *TeamChatRepo) GetLeaveRequestByID(leaveID int64) (*model.LeaveRequest, 
 	}
 	if reviewerID.Valid {
 		req.ReviewerID = &reviewerID.String
+	}
+	if reviewerName.Valid {
+		req.ReviewerName = reviewerName.String
+	}
+	if reviewComment.Valid {
+		req.ReviewComment = &reviewComment.String
+	}
+	if reviewedAt.Valid {
+		req.ReviewedAt = &reviewedAt.Time
+	}
+	return &req, nil
+}
+
+// GetLeaveRequestByMessageID 根据message_id获取请假申请
+func (r *TeamChatRepo) GetLeaveRequestByMessageID(messageID int64) (*model.LeaveRequest, error) {
+	query := `
+		SELECT l.leave_id, l.team_id, l.applicant_id, u1.name, l.message_id, l.leave_type, 
+		       l.start_date, l.end_date, l.reason, l.status, l.reviewer_id, u2.name, 
+		       l.review_comment, l.reviewed_at, l.created_at
+		FROM leave_requests l
+		LEFT JOIN users u1 ON l.applicant_id = u1.student_id
+		LEFT JOIN users u2 ON l.reviewer_id = u2.student_id
+		WHERE l.message_id = ?
+	`
+	var req model.LeaveRequest
+	var msgID sql.NullInt64
+	var reviewerID sql.NullString
+	var reviewerName sql.NullString
+	var reviewComment sql.NullString
+	var reviewedAt sql.NullTime
+	err := db.QueryRow(query, messageID).Scan(&req.LeaveID, &req.TeamID, &req.ApplicantID, &req.ApplicantName,
+		&msgID, &req.LeaveType, &req.StartDate, &req.EndDate, &req.Reason, &req.Status,
+		&reviewerID, &reviewerName, &reviewComment, &reviewedAt, &req.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if msgID.Valid {
+		req.MessageID = &msgID.Int64
+	}
+	if reviewerID.Valid {
+		req.ReviewerID = &reviewerID.String
+	}
+	if reviewerName.Valid {
+		req.ReviewerName = reviewerName.String
 	}
 	if reviewComment.Valid {
 		req.ReviewComment = &reviewComment.String
@@ -386,6 +467,51 @@ func (r *TeamChatRepo) ReviewLeaveRequest(leaveID int64, reviewerID string, stat
 	          SET status = ?, reviewer_id = ?, review_comment = ?, reviewed_at = CURRENT_TIMESTAMP 
 	          WHERE leave_id = ?`
 	_, err := db.Exec(query, status, reviewerID, comment, leaveID)
+	return err
+}
+
+// DeleteMessage 删除消息
+// 权限校验在 Service 层完成，这里只按 message_id 删除记录
+func (r *TeamChatRepo) DeleteMessage(messageID int64) error {
+	query := `DELETE FROM team_messages WHERE message_id = ?`
+	result, err := db.Exec(query, messageID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return errors.New("消息不存在或无权删除")
+	}
+	return nil
+}
+
+// GetMessageByID 根据ID获取消息
+func (r *TeamChatRepo) GetMessageByID(messageID int64) (*model.TeamMessage, error) {
+	query := `
+		SELECT m.message_id, m.team_id, m.sender_id, COALESCE(u.name, ''), m.message_type, m.content, m.created_at
+		FROM team_messages m
+		LEFT JOIN users u ON m.sender_id = u.student_id
+		WHERE m.message_id = ?
+	`
+	var msg model.TeamMessage
+	err := db.QueryRow(query, messageID).Scan(&msg.MessageID, &msg.TeamID, &msg.SenderID, &msg.SenderName,
+		&msg.MessageType, &msg.Content, &msg.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &msg, nil
+}
+
+// UpdateMessageContent 更新消息内容
+func (r *TeamChatRepo) UpdateMessageContent(messageID int64, content string) error {
+	query := `UPDATE team_messages SET content = ? WHERE message_id = ?`
+	_, err := db.Exec(query, content, messageID)
 	return err
 }
 

@@ -49,7 +49,17 @@ async function request(path, { method = 'GET', headers = {}, body, params, auth 
 
 export async function get(path, options = {}) {
   const res = await request(path, { ...options, method: 'GET' })
-  return res.json()
+  const contentType = res.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    const text = await res.text()
+    throw new Error(`Invalid response format: ${text.substring(0, 200)}`)
+  }
+  try {
+    return await res.json()
+  } catch (err) {
+    const text = await res.text()
+    throw new Error(`JSON parse error: ${err.message}, response: ${text.substring(0, 200)}`)
+  }
 }
 
 export async function post(path, body, options = {}) {
@@ -64,7 +74,17 @@ export async function put(path, body, options = {}) {
 
 export async function del(path, body, options = {}) {
   const res = await request(path, { ...options, method: 'DELETE', body })
-  return res.json()
+  const contentType = res.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    const text = await res.text()
+    throw new Error(`Invalid response format: ${text.substring(0, 200)}`)
+  }
+  try {
+    return await res.json()
+  } catch (err) {
+    const text = await res.text()
+    throw new Error(`JSON parse error: ${err.message}, response: ${text.substring(0, 200)}`)
+  }
 }
 
 const httpDelete = del

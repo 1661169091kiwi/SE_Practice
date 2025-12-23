@@ -92,14 +92,17 @@ func New() http.Handler {
 	mux.Handle("/api/team/chat/messages", middleware.Auth(http.HandlerFunc(handler.CreateMessage)))           // 创建消息
 	mux.Handle("/api/team/chat/messages/list", middleware.Auth(http.HandlerFunc(handler.GetTeamMessages)))     // 获取消息列表
 	mux.Handle("/api/team/chat/messages/read", middleware.Auth(http.HandlerFunc(handler.MarkMessageAsRead)))  // 标记已读
+	mux.Handle("/api/team/chat/messages/delete", middleware.Auth(http.HandlerFunc(handler.DeleteMessage)))     // 删除消息
 	mux.Handle("/api/team/chat/votes", middleware.Auth(http.HandlerFunc(handler.CreateVote)))                  // 创建投票
 	mux.Handle("/api/team/chat/votes/list", middleware.Auth(http.HandlerFunc(handler.GetTeamVotes)))          // 获取投票列表
+	mux.Handle("/api/team/chat/votes/by-message", middleware.Auth(http.HandlerFunc(handler.GetVoteByMessageID))) // 根据message_id获取投票
 	mux.Handle("/api/team/chat/votes/vote", middleware.Auth(http.HandlerFunc(handler.Vote)))                 // 投票
 	mux.Handle("/api/team/chat/notifications", middleware.Auth(http.HandlerFunc(handler.CreateNotification))) // 创建通知
 	mux.Handle("/api/team/chat/notifications/list", middleware.Auth(http.HandlerFunc(handler.GetTeamNotifications))) // 获取通知列表
 	mux.Handle("/api/team/chat/leave-requests", middleware.Auth(http.HandlerFunc(handler.CreateLeaveRequest))) // 创建请假申请
 	mux.Handle("/api/team/chat/leave-requests/list", middleware.Auth(http.HandlerFunc(handler.GetLeaveRequests))) // 获取请假申请列表
 	mux.Handle("/api/team/chat/leave-requests/review", middleware.Auth(http.HandlerFunc(handler.ReviewLeaveRequest))) // 审核请假申请
+	mux.Handle("/api/team/chat/leave-requests/by-message", middleware.Auth(http.HandlerFunc(handler.GetLeaveRequestByMessageID))) // 根据message_id获取请假申请
 
 	return middleware.CORS(mux)
 }

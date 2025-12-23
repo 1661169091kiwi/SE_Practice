@@ -40,15 +40,40 @@
             <div 
               v-for="msg in messages" 
               :key="msg.message_id"
-              :class="['message-item', { 'is-read': msg.is_read }]"
+              :class="['message-item', { 'is-read': msg.is_read }, { 'clickable': msg.message_type === 'vote' || msg.message_type === 'notification' }]"
+              @click.stop="handleMessageClick(msg)"
             >
-              <div class="message-header">
+              <div class="message-header" @click.stop>
                 <span class="sender-name">{{ msg.sender_name }}</span>
                 <span class="message-time">{{ formatTime(msg.created_at) }}</span>
+                <span v-if="msg.message_type === 'vote'" class="message-type-badge vote-badge">投票</span>
+                <span v-if="msg.message_type === 'notification'" class="message-type-badge notification-badge">通知</span>
+                <span v-if="msg.message_type === 'leave_request'" class="message-type-badge leave-badge">请假</span>
                 <span v-if="!msg.is_read" class="unread-badge">未读</span>
                 <span class="read-count">{{ msg.read_count }}/{{ msg.total_count }} 已读</span>
+                <button 
+                  v-if="msg.sender_id === authStore.studentId && (msg.message_type === 'text' || msg.message_type === 'vote' || msg.message_type === 'notification' || msg.message_type === 'leave_request')"
+                  @click.stop="deleteMessage(msg)"
+                  class="delete-message-btn"
+                  title="删除消息"
+                >
+                  ×
+                </button>
               </div>
-              <div class="message-content">{{ msg.content }}</div>
+              <div class="message-content">
+                <span v-if="msg.message_type === 'vote'" class="vote-link">📊 {{ msg.content }} (点击查看详情)</span>
+                <span v-else-if="msg.message_type === 'leave_request'" class="leave-link">{{ msg.content }}</span>
+                <span v-else class="text-content">{{ msg.content }}</span>
+              </div>
+              <!-- 请假消息的审核按钮（仅队长可见） -->
+              <div v-if="msg.message_type === 'leave_request' && isCaptain" class="message-actions" @click.stop>
+                <button 
+                  @click="handleLeaveReviewFromMessage(msg)"
+                  class="review-btn"
+                >
+                  审核请假
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -74,7 +99,17 @@
           <div v-for="vote in votes" :key="vote.vote_id" class="vote-item">
             <div class="vote-header">
               <h4>{{ vote.title }}</h4>
-              <span :class="['vote-status', vote.status]">{{ vote.status === 'active' ? '进行中' : '已结束' }}</span>
+              <div class="vote-header-right">
+                <span :class="['vote-status', vote.status]">{{ vote.status === 'active' ? '进行中' : '已结束' }}</span>
+                <button 
+                  v-if="vote.creator_id === authStore.studentId"
+                  @click="deleteVote(vote)"
+                  class="delete-vote-btn"
+                  title="删除投票"
+                >
+                  删除
+                </button>
+              </div>
             </div>
             <div v-if="vote.description" class="vote-description">{{ vote.description }}</div>
             <div class="vote-options">
@@ -127,9 +162,19 @@
           >
             <div class="notification-header">
               <h4>{{ notif.title }}</h4>
-              <span :class="['notification-type', notif.notification_type]">
-                {{ getNotificationTypeText(notif.notification_type) }}
-              </span>
+              <div class="notification-header-right">
+                <span :class="['notification-type', notif.notification_type]">
+                  {{ getNotificationTypeText(notif.notification_type) }}
+                </span>
+                <button 
+                  v-if="notif.sender_id === authStore.studentId"
+                  @click="deleteNotification(notif)"
+                  class="delete-notification-btn"
+                  title="删除通知"
+                >
+                  删除
+                </button>
+              </div>
             </div>
             <div class="notification-content">{{ notif.content }}</div>
             <div class="notification-footer">
@@ -252,6 +297,56 @@
       </div>
     </div>
 
+    <!-- 投票详情弹窗 -->
+    <div v-if="showVoteDetailModal && currentVoteDetail" class="modal-overlay" @click.self="showVoteDetailModal = false">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>投票详情</h3>
+          <button @click="showVoteDetailModal = false" class="modal-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="vote-detail">
+            <h4>{{ currentVoteDetail.title }}</h4>
+            <div v-if="currentVoteDetail.description" class="vote-description">{{ currentVoteDetail.description }}</div>
+            <div class="vote-options">
+              <label 
+                v-for="(option, idx) in currentVoteDetail.options" 
+                :key="idx"
+                :class="['option-item', { 'selected': currentVoteDetail.user_vote && currentVoteDetail.user_vote.includes(idx) }]"
+              >
+                <input 
+                  type="checkbox" 
+                  v-if="currentVoteDetail.is_multiple"
+                  :checked="currentVoteDetail.user_vote && currentVoteDetail.user_vote.includes(idx)"
+                  @change="handleVoteOptionChange(currentVoteDetail, idx, $event)"
+                  :disabled="currentVoteDetail.status === 'closed' || (currentVoteDetail.deadline && new Date(currentVoteDetail.deadline) < new Date())"
+                />
+                <input 
+                  type="radio" 
+                  v-else
+                  :name="'vote_detail_' + currentVoteDetail.vote_id"
+                  :checked="currentVoteDetail.user_vote && currentVoteDetail.user_vote.includes(idx)"
+                  @change="handleVoteOptionChange(currentVoteDetail, idx, $event)"
+                  :disabled="currentVoteDetail.status === 'closed' || (currentVoteDetail.deadline && new Date(currentVoteDetail.deadline) < new Date())"
+                />
+                <span class="option-text">{{ option }}</span>
+                <span v-if="currentVoteDetail.results && currentVoteDetail.results.length > 0" class="option-result">
+                  {{ currentVoteDetail.results[idx].vote_count }}票 ({{ currentVoteDetail.results[idx].percentage.toFixed(1) }}%)
+                </span>
+              </label>
+            </div>
+            <div class="vote-footer">
+              <span>共 {{ currentVoteDetail.vote_count }} 人投票</span>
+              <span v-if="currentVoteDetail.deadline">截止时间: {{ formatTime(currentVoteDetail.deadline) }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button @click="showVoteDetailModal = false" class="modal-btn primary">关闭</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 创建请假申请弹窗 -->
     <div v-if="showCreateLeaveModal" class="modal-overlay" @click.self="showCreateLeaveModal = false">
       <div class="modal-content">
@@ -292,7 +387,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, watch, nextTick } from 'vue'
-import { get, post } from '@/utils/http'
+import { get, post, del } from '@/utils/http'
 import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({
@@ -330,6 +425,8 @@ const messagesContainer = ref(null)
 const showCreateVoteModal = ref(false)
 const showCreateNotificationModal = ref(false)
 const showCreateLeaveModal = ref(false)
+const showVoteDetailModal = ref(false)
+const currentVoteDetail = ref(null)
 
 const voteForm = reactive({
   title: '',
@@ -359,6 +456,10 @@ const fetchMessages = async () => {
     const res = await get(`/team/chat/messages/list?team_id=${props.teamId}&limit=50`)
     if (res.code === 200) {
       messages.value = (res.data || []).reverse() // 反转以显示最新消息在底部
+      console.log('Messages loaded:', messages.value)
+      // 检查投票消息
+      const voteMessages = messages.value.filter(m => m.message_type === 'vote')
+      console.log('Vote messages:', voteMessages)
       nextTick(() => {
         scrollToBottom()
       })
@@ -390,6 +491,81 @@ const sendMessage = async () => {
     alert('发送失败: ' + (err.response?.data?.message || err.message))
   } finally {
     submitting.value = false
+  }
+}
+
+// 处理消息点击
+const handleMessageClick = async (msg) => {
+  console.log('Message clicked:', msg)
+  console.log('Message type:', msg.message_type)
+  
+  // 如果是请假消息，获取请假申请详情
+  if (msg.message_type === 'leave_request') {
+    try {
+      const res = await get(`/team/chat/leave-requests/by-message?message_id=${msg.message_id}`)
+      if (res.code === 200 && res.data) {
+        currentLeaveRequest.value = res.data
+      }
+    } catch (err) {
+      console.error('Get leave request error:', err)
+    }
+  }
+
+  // 如果是投票消息，显示投票详情
+  if (msg.message_type === 'vote') {
+    console.log('Opening vote detail for message_id:', msg.message_id)
+    try {
+      const res = await get(`/team/chat/votes/by-message?message_id=${msg.message_id}`)
+      console.log('Vote detail response:', res)
+      if (res.code === 200 && res.data) {
+        currentVoteDetail.value = res.data
+        showVoteDetailModal.value = true
+        console.log('Vote detail modal opened, vote:', res.data)
+      } else {
+        console.error('Invalid response:', res)
+        // 如果通过message_id找不到，尝试从投票列表中查找
+        await fetchVotes()
+        const voteFromList = votes.value.find(v => v.message_id === msg.message_id)
+        if (voteFromList) {
+          currentVoteDetail.value = voteFromList
+          showVoteDetailModal.value = true
+          console.log('Found vote from list:', voteFromList)
+        } else {
+          alert('获取投票详情失败: ' + (res.message || '投票不存在'))
+        }
+      }
+    } catch (err) {
+      console.error('Get vote detail error:', err)
+      console.error('Error details:', err.response)
+      // 如果API调用失败，尝试从投票列表中查找
+      try {
+        await fetchVotes()
+        const voteFromList = votes.value.find(v => v.message_id === msg.message_id)
+        if (voteFromList) {
+          currentVoteDetail.value = voteFromList
+          showVoteDetailModal.value = true
+          console.log('Found vote from list after error:', voteFromList)
+        } else {
+          alert('获取投票详情失败: ' + (err.response?.data?.message || err.message || '网络错误'))
+        }
+      } catch (fetchErr) {
+        alert('获取投票详情失败: ' + (err.response?.data?.message || err.message || '网络错误'))
+      }
+    }
+  }
+
+  // 标记为已读（无论是否投票消息都标记）
+  if (!msg.is_read) {
+    try {
+      await post('/team/chat/messages/read', {
+        message_id: msg.message_id
+      })
+      // 更新本地状态
+      msg.is_read = true
+      msg.read_count = (msg.read_count || 0) + 1
+    } catch (err) {
+      console.error('Mark message as read error:', err)
+    }
   }
 }
 
@@ -434,6 +610,13 @@ const handleVoteOptionChange = async (vote, optionIdx, event) => {
     })
     if (res.code === 200) {
       await fetchVotes()
+      // 如果是在详情弹窗中，更新详情数据
+      if (showVoteDetailModal.value && currentVoteDetail.value && currentVoteDetail.value.vote_id === vote.vote_id) {
+        const detailRes = await get(`/team/chat/votes/by-message?message_id=${vote.message_id}`)
+        if (detailRes.code === 200) {
+          currentVoteDetail.value = detailRes.data
+        }
+      }
     }
   } catch (err) {
     console.error('Vote error:', err)
@@ -454,15 +637,26 @@ const createVote = async () => {
 
   submitting.value = true
   try {
+    // 处理截止时间格式
+    let deadlineValue = null
+    if (voteForm.deadline) {
+      // datetime-local 格式转换为 ISO 8601 格式
+      const date = new Date(voteForm.deadline)
+      if (!isNaN(date.getTime())) {
+        deadlineValue = date.toISOString()
+      }
+    }
+    
     const res = await post('/team/chat/votes', {
       team_id: props.teamId,
       title: voteForm.title,
       description: voteForm.description,
       options: voteForm.options.filter(opt => opt.trim()),
       is_multiple: voteForm.is_multiple,
-      deadline: voteForm.deadline || null
+      deadline: deadlineValue
     })
     if (res.code === 200) {
+      alert('投票发布成功！')
       showCreateVoteModal.value = false
       Object.assign(voteForm, {
         title: '',
@@ -472,6 +666,10 @@ const createVote = async () => {
         deadline: ''
       })
       await fetchVotes()
+      // 刷新消息列表以显示新创建的投票消息
+      await fetchMessages()
+    } else {
+      alert('创建失败: ' + (res.message || '未知错误'))
     }
   } catch (err) {
     console.error('Create vote error:', err)
@@ -568,6 +766,7 @@ const createLeaveRequest = async () => {
       reason: leaveForm.reason
     })
     if (res.code === 200) {
+      alert('请假申请提交成功！')
       showCreateLeaveModal.value = false
       Object.assign(leaveForm, {
         leave_type: 'personal',
@@ -576,6 +775,10 @@ const createLeaveRequest = async () => {
         reason: ''
       })
       await fetchLeaveRequests()
+      // 刷新消息列表以显示新创建的请假申请消息
+      await fetchMessages()
+    } else {
+      alert('申请失败: ' + (res.message || '未知错误'))
     }
   } catch (err) {
     console.error('Create leave request error:', err)
@@ -586,9 +789,11 @@ const createLeaveRequest = async () => {
 }
 
 // 审核请假申请
-const reviewLeave = async (req, status) => {
-  const comment = prompt(status === 'approved' ? '请输入批准意见（可选）' : '请输入拒绝原因（可选）')
-  if (comment === null) return // 用户取消
+const reviewLeave = async (req, status, comment = null) => {
+  if (comment === null) {
+    comment = prompt(status === 'approved' ? '请输入批准意见（可选）' : '请输入拒绝原因（可选）')
+    if (comment === null) return // 用户取消
+  }
 
   try {
     const res = await post('/team/chat/leave-requests/review', {
@@ -597,11 +802,154 @@ const reviewLeave = async (req, status) => {
       review_comment: comment || ''
     })
     if (res.code === 200) {
+      alert(status === 'approved' ? '已批准请假申请' : '已拒绝请假申请')
       await fetchLeaveRequests()
+      // 刷新消息列表以显示审核结果
+      await fetchMessages()
+      currentLeaveRequest.value = null
     }
   } catch (err) {
     console.error('Review leave request error:', err)
     alert('审核失败: ' + (err.response?.data?.message || err.message))
+  }
+}
+
+// 删除消息
+const deleteMessage = async (msg) => {
+  if (!confirm('确定要删除这条消息吗？删除后无法恢复。')) {
+    return
+  }
+
+  try {
+    const res = await del(`/team/chat/messages/delete?message_id=${msg.message_id}`)
+    if (res.code === 200) {
+      // 从列表中移除消息
+      messages.value = messages.value.filter(m => m.message_id !== msg.message_id)
+      // 如果是投票、通知或请假，也从对应列表中移除
+      if (msg.message_type === 'vote') {
+        votes.value = votes.value.filter(v => v.message_id !== msg.message_id)
+      } else if (msg.message_type === 'notification') {
+        notifications.value = notifications.value.filter(n => n.message_id !== msg.message_id)
+      } else if (msg.message_type === 'leave_request') {
+        leaveRequests.value = leaveRequests.value.filter(l => l.message_id !== msg.message_id)
+      }
+      alert('消息已删除')
+    } else {
+      alert('删除失败: ' + (res.message || '未知错误'))
+    }
+  } catch (err) {
+    console.error('Delete message error:', err)
+    const errorMsg = err.message || '未知错误'
+    // 尝试从错误消息中提取有用的信息
+    if (errorMsg.includes('只能删除')) {
+      alert('删除失败: ' + errorMsg)
+    } else if (errorMsg.includes('JSON parse error')) {
+      alert('删除失败: 服务器响应格式错误，请检查网络连接')
+    } else {
+      alert('删除失败: ' + errorMsg)
+    }
+  }
+}
+
+// 删除投票
+const deleteVote = async (vote) => {
+  if (!confirm('确定要删除这个投票吗？删除后无法恢复。')) {
+    return
+  }
+
+  try {
+    const res = await del(`/team/chat/messages/delete?message_id=${vote.message_id}`)
+    if (res.code === 200) {
+      votes.value = votes.value.filter(v => v.vote_id !== vote.vote_id)
+      messages.value = messages.value.filter(m => m.message_id !== vote.message_id)
+      alert('投票已删除')
+    } else {
+      alert('删除失败: ' + (res.message || '未知错误'))
+    }
+  } catch (err) {
+    console.error('Delete vote error:', err)
+    alert('删除失败: ' + (err.response?.data?.message || err.message))
+  }
+}
+
+// 删除通知
+const deleteNotification = async (notif) => {
+  if (!confirm('确定要删除这个通知吗？删除后无法恢复。')) {
+    return
+  }
+
+  try {
+    const res = await del(`/team/chat/messages/delete?message_id=${notif.message_id}`)
+    if (res.code === 200) {
+      notifications.value = notifications.value.filter(n => n.notification_id !== notif.notification_id)
+      messages.value = messages.value.filter(m => m.message_id !== notif.message_id)
+      alert('通知已删除')
+    } else {
+      alert('删除失败: ' + (res.message || '未知错误'))
+    }
+  } catch (err) {
+    console.error('Delete notification error:', err)
+    alert('删除失败: ' + (err.response?.data?.message || err.message))
+  }
+}
+
+// 从消息中处理请假审核
+const handleLeaveReviewFromMessage = async (msg) => {
+  try {
+    // 确保已加载请假申请列表
+    if (!leaveRequests.value.length) {
+      await fetchLeaveRequests()
+    }
+
+    // 1) 优先根据 message_id 精确匹配（本地列表）
+    let leaveReq = leaveRequests.value.find(
+      l => l.message_id !== undefined && l.message_id !== null && Number(l.message_id) === Number(msg.message_id)
+    )
+
+    // 2) 如果没有找到，尝试根据申请人姓名 + 待审核状态进行模糊匹配（兼容旧数据未写入 message_id 的情况）
+    if (!leaveReq) {
+      const pendingForSender = leaveRequests.value.filter(
+        l => l.status === 'pending' && l.applicant_name === msg.sender_name
+      )
+      if (pendingForSender.length === 1) {
+        leaveReq = pendingForSender[0]
+      }
+    }
+
+    // 3) 仍然没有找到时，调用后端接口通过 message_id 精确查询一遍
+    if (!leaveReq) {
+      try {
+        const res = await get(`/team/chat/leave-requests/by-message?message_id=${msg.message_id}`)
+        if (res.code === 200 && res.data) {
+          leaveReq = res.data
+        }
+      } catch (e) {
+        console.error('Get leave request by message_id error:', e)
+      }
+    }
+
+    if (!leaveReq) {
+      alert('未找到对应的请假申请记录，请到“请假”页中查看/审核')
+      currentTab.value = 'leave'
+      return
+    }
+
+    if (leaveReq.status !== 'pending') {
+      alert('该请假申请已处理')
+      return
+    }
+
+    // 显示审核弹窗
+    const action = confirm('批准请假申请？\n点击"确定"批准，点击"取消"拒绝')
+    const comment = prompt(action ? '请输入批准意见（可选）' : '请输入拒绝原因（可选）')
+    if (comment === null && !action) return // 用户取消拒绝操作
+
+    const status = action ? 'approved' : 'rejected'
+    await reviewLeave(leaveReq, status, comment || '')
+  } catch (err) {
+    console.error('Get leave request error:', err)
+    const errorMsg = err.message || '未知错误'
+    alert('获取请假申请失败: ' + errorMsg)
   }
 }
 
@@ -758,6 +1106,52 @@ onMounted(() => {
   opacity: 0.7;
 }
 
+.message-item.clickable {
+  cursor: pointer;
+  transition: background-color 0.2s;
+  user-select: none;
+}
+
+.message-item.clickable:hover {
+  background: #f0f0f0;
+}
+
+.message-item.clickable:active {
+  background: #e8e8e8;
+}
+
+.message-type-badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.vote-badge {
+  background: #1890ff;
+  color: white;
+}
+
+.notification-badge {
+  background: #faad14;
+  color: white;
+}
+
+.leave-badge {
+  background: #722ed1;
+  color: white;
+}
+
+.vote-link {
+  color: #1890ff;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.leave-link {
+  color: #722ed1;
+}
+
 .message-header {
   display: flex;
   align-items: center;
@@ -789,9 +1183,73 @@ onMounted(() => {
   color: #999;
 }
 
+.delete-message-btn {
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: #ff4d4f;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.delete-message-btn:hover {
+  opacity: 1;
+}
+
+.delete-vote-btn, .delete-notification-btn {
+  padding: 4px 12px;
+  background: #ff4d4f;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+
+.delete-vote-btn:hover, .delete-notification-btn:hover {
+  background: #ff7875;
+}
+
+.message-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.review-btn {
+  padding: 6px 12px;
+  background: #1890ff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+
+.review-btn:hover:not(:disabled) {
+  background: #40a9ff;
+}
+
+.review-btn:disabled {
+  background: #d9d9d9;
+  cursor: not-allowed;
+}
+
 .message-content {
   color: #333;
   line-height: 1.5;
+}
+
+.message-content .text-content {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .message-input-container {
@@ -855,6 +1313,12 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
+}
+
+.vote-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .vote-header h4 {
@@ -939,6 +1403,12 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
+}
+
+.notification-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .notification-header h4 {
