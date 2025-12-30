@@ -95,64 +95,113 @@ const handleForgotPassword = () => {
   justify-content: center;
   align-items: center;
   padding: var(--spacing-3xl) var(--spacing-xl);
-  background: radial-gradient(circle at top, #e6f1ff 0, var(--background-secondary) 45%, #edf0f5 100%);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+  background-size: 200% 200%;
+  animation: gradientBG 15s ease infinite;
+}
+
+@keyframes gradientBG {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
 }
 
 .login-header {
   text-align: center;
   margin-bottom: var(--spacing-3xl);
+  animation: slideDown 0.6s var(--transition-bezier);
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .login-header h1 {
-  font-size: 24px;
-  color: var(--text-primary);
+  font-size: 28px;
+  color: white;
   margin-bottom: var(--spacing-sm);
-  letter-spacing: 1px;
+  letter-spacing: 2px;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  font-weight: 600;
 }
 
 .login-header p {
-  font-size: 14px;
-  color: var(--text-secondary);
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 300;
+  letter-spacing: 1px;
 }
 
 .login-form {
   width: 100%;
-  max-width: 400px;
-  background-color: var(--background-primary);
-  border-radius: var(--border-radius-lg);
-  padding: var(--spacing-2xl);
-  box-shadow: var(--shadow-md);
-  border: 1px solid var(--border-color);
-  animation: fadeInCard 0.3s var(--transition-bezier);
+  max-width: 420px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 32px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  animation: fadeInCard 0.5s var(--transition-bezier);
+}
+
+@keyframes fadeInCard {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .form-group {
-  margin-bottom: var(--spacing-xl);
+  margin-bottom: 24px;
 }
 
 .form-group label {
   display: block;
-  margin-bottom: var(--spacing-xs);
+  margin-bottom: 8px;
   font-size: 14px;
-  color: var(--text-primary);
+  color: #374151;
   font-weight: 500;
+  letter-spacing: 0.3px;
 }
 
 .form-input {
   width: 100%;
-  height: 44px;
-  padding: 0 var(--spacing-md);
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius-md);
+  height: 48px;
+  padding: 0 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
   font-size: 15px;
   box-sizing: border-box;
-  background-color: var(--background-primary);
+  background-color: #ffffff;
+  transition: all 0.3s var(--transition-bezier);
 }
 
 .form-input:focus {
   outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(42, 122, 226, 0.18);
+  border-color: #6366f1;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
+  transform: translateY(-1px);
+}
+
+.form-input:hover {
+  border-color: #d1d5db;
 }
 
 .password-input-container {
@@ -161,94 +210,123 @@ const handleForgotPassword = () => {
 
 .password-toggle {
   position: absolute;
-  right: 12px;
+  right: 14px;
   top: 50%;
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: var(--primary-color);
-  font-size: 14px;
-  padding: 4px 6px;
+  color: #6366f1;
+  font-size: 13px;
+  padding: 6px 10px;
   cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.password-toggle:hover {
+  background-color: #eef2ff;
 }
 
 .error-message {
-  color: var(--danger-color);
+  color: #ef4444;
   font-size: 14px;
-  margin-bottom: var(--spacing-md);
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  background-color: #fef2f2;
+  border-radius: 8px;
+  border-left: 4px solid #ef4444;
+  animation: shake 0.4s var(--transition-bezier);
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
 }
 
 .login-button {
   width: 100%;
-  height: 44px;
-  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
-  color: var(--text-white);
+  height: 50px;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: white;
   border: none;
-  border-radius: var(--border-radius-md);
+  border-radius: 12px;
   font-size: 16px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: all var(--transition-normal);
-  box-shadow: var(--shadow-md);
+  transition: all 0.3s var(--transition-bezier);
+  box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.39);
+  letter-spacing: 0.5px;
 }
 
 .login-button:hover {
-  background: linear-gradient(135deg, var(--primary-hover) 0%, var(--primary-active) 100%);
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-1px);
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  box-shadow: 0 6px 20px 0 rgba(99, 102, 241, 0.5);
+  transform: translateY(-2px);
 }
 
 .login-button:active {
   transform: translateY(0);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 8px 0 rgba(99, 102, 241, 0.3);
 }
 
 .login-footer {
-  margin-top: var(--spacing-xl);
+  margin-top: 24px;
   text-align: center;
 }
 
 .forgot-password {
   background: none;
   border: none;
-  color: var(--primary-color);
+  color: #6366f1;
   font-size: 14px;
   cursor: pointer;
-  margin-bottom: var(--spacing-sm);
+  margin-bottom: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.forgot-password:hover {
+  background-color: #eef2ff;
 }
 
 .auth-hint {
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: #9ca3af;
   margin: 0;
-}
-
-@keyframes fadeInCard {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  font-weight: 400;
 }
 
 /* 移动端适配 */
 @media (max-width: 768px) {
   .login-container {
     justify-content: flex-start;
-    padding: var(--spacing-2xl) var(--spacing-lg);
-    padding-top: var(--spacing-4xl);
+    padding: 24px 20px;
+    padding-top: 80px;
   }
 
   .login-form {
-    padding: var(--spacing-xl);
-    margin-top: var(--spacing-lg);
+    padding: 24px;
+    margin-top: 20px;
+    border-radius: 16px;
   }
 
   .login-header h1 {
-    font-size: 20px;
+    font-size: 24px;
+  }
+
+  .form-input,
+  .login-button {
+    height: 46px;
   }
 }
 </style>
