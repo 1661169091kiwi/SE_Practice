@@ -117,7 +117,7 @@ axios.defaults.baseURL = 'http://localhost:5173'
 export default {
   data() {
     return {
-      // 当前激活的菜单（默认选中参赛队伍管理）
+      // 当前激活的菜单（默认参赛队伍管理）
       activeMenu: 'team',
       // 比赛类型选项
       matchTypes: ['足球', '篮球', '羽毛球', '排球', '水上运动'],

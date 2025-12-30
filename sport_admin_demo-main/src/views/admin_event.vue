@@ -69,7 +69,7 @@
 <script>
 // 引入axios（若项目已全局注册可省略）
 import axios from 'axios'
-// 配置后端基础地址（根据实际部署地址修改）
+// 配置后端基础地址（根据实际情况修改）
 axios.defaults.baseURL = 'http://localhost:5173'
 
 export default {

@@ -116,7 +116,7 @@ axios.defaults.baseURL = 'http://localhost:5173'
 export default {
   data() {
     return {
-      // 侧边菜单数据
+      // 侧边菜单
       menuList: [
         { label: '赛事基本信息发布', icon: '&#xe63c;' },
         { label: '赛事编排管理', icon: '&#xe62a;' },
