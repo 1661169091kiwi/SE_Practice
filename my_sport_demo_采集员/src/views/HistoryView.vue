@@ -65,7 +65,7 @@ const loadHistoryData = (refresh = false) => {
   } else {
     isLoading.value = true
   }
-  
+
   // 模拟API请求
   setTimeout(() => {
     const mockData = [
@@ -180,10 +180,10 @@ const loadHistoryData = (refresh = false) => {
         eventId: '203'
       }
     ]
-    
+
     historyData.value = mockData
     pagination.value.total = mockData.length
-    
+
     isLoading.value = false
     isRefreshing.value = false
   }, 1500)
@@ -192,12 +192,12 @@ const loadHistoryData = (refresh = false) => {
 // 筛选后的数据
 const filteredData = computed(() => {
   let data = [...historyData.value]
-  
+
   // 按运动类型筛选
   if (filterOptions.value.sportType !== 'all') {
     data = data.filter(item => item.sportType === filterOptions.value.sportType)
   }
-  
+
   // 按日期范围筛选
   if (filterOptions.value.dateRange) {
     const dates = filterOptions.value.dateRange.split(' 至 ')
@@ -210,12 +210,12 @@ const filteredData = computed(() => {
       })
     }
   }
-  
+
   // 按状态筛选
   if (filterOptions.value.status !== 'all') {
     data = data.filter(item => item.status === filterOptions.value.status)
   }
-  
+
   return data
 })
 
@@ -252,7 +252,7 @@ const handleViewDetails = (item) => {
     volleyball: '/volleyball-data/',
     water_sports: '/water-sports-data/'
   }
-  
+
   const routePath = routes[item.sportType] || '/data-collection/'
   router.push(`${routePath}${item.eventId}`)
 }
@@ -272,7 +272,7 @@ const handleEdit = (item) => {
       volleyball: '/volleyball-data/',
       water_sports: '/water-sports-data/'
     }
-    
+
     const routePath = routes[item.sportType] || '/data-collection/'
     router.push(`${routePath}${item.eventId}`)
   }
@@ -288,7 +288,7 @@ onMounted(() => {
   <div class="history-view">
     <!-- 赛事信息头部 -->
     <MatchHeader :event="eventInfo" />
-    
+
     <!-- 页面标题 -->
     <div class="page-header">
       <h1 class="page-title">历史记录</h1>
@@ -297,7 +297,7 @@ onMounted(() => {
         <span v-else>刷新中...</span>
       </button>
     </div>
-    
+
     <!-- 筛选栏 -->
     <div class="filter-section">
       <div class="filter-row">
@@ -312,10 +312,10 @@ onMounted(() => {
             <option value="water_sports">水上运动</option>
           </select>
         </div>
-        
+
         <div class="filter-item">
           <label class="filter-label">日期范围</label>
-          <input 
+          <input
             v-model="filterOptions.dateRange"
             type="text"
             placeholder="选择日期范围"
@@ -325,7 +325,7 @@ onMounted(() => {
             @change="handleFilterChange"
           />
         </div>
-        
+
         <div class="filter-item">
           <label class="filter-label">状态</label>
           <select v-model="filterOptions.status" @change="handleFilterChange" class="filter-select">
@@ -338,65 +338,65 @@ onMounted(() => {
         </div>
       </div>
     </div>
-    
+
     <!-- 加载状态 -->
     <div v-if="isLoading" class="loading-container">
       <div class="loading-spinner"></div>
       <p>加载中...</p>
     </div>
-    
+
     <!-- 历史记录列表 -->
     <div v-else class="history-list">
       <div v-if="filteredData.length === 0" class="empty-state">
         <div class="empty-icon">📋</div>
         <p>暂无符合条件的历史记录</p>
       </div>
-      
+
       <div v-else class="history-cards">
-        <div 
-          v-for="item in paginatedData" 
+        <div
+          v-for="item in paginatedData"
           :key="item.id"
           class="history-card"
           @click="handleViewDetails(item)"
         >
           <div class="card-header">
             <h3 class="event-name">{{ item.eventName }}</h3>
-            <span 
+            <span
               class="status-badge"
               :class="getStatusInfo(item.status).class"
             >
               {{ getStatusInfo(item.status).name }}
             </span>
           </div>
-          
+
           <div class="card-body">
             <div class="info-row">
               <span class="info-label">运动类型:</span>
               <span class="info-value">{{ getSportTypeName(item.sportType) }}</span>
             </div>
-            
+
             <div class="info-row">
               <span class="info-label">比赛日期:</span>
               <span class="info-value">{{ item.date }}</span>
             </div>
-            
+
             <div class="info-row">
               <span class="info-label">提交时间:</span>
               <span class="info-value">{{ item.submitTime }}</span>
             </div>
-            
+
             <!-- 驳回原因 -->
             <div v-if="item.status === 'rejected' && item.rejectReason" class="reject-reason">
               <span class="reject-label">驳回原因:</span>
               <span class="reject-text">{{ item.rejectReason }}</span>
             </div>
           </div>
-          
+
           <div class="card-actions">
             <button @click.stop="handlePreview(item)" class="action-btn preview-btn">
               预览
             </button>
-            <button 
+            <button
               v-if="item.status === 'rejected' || item.status === 'pending'"
               @click.stop="handleEdit(item)"
               class="action-btn edit-btn"
@@ -406,22 +406,22 @@ onMounted(() => {
           </div>
         </div>
       </div>
-      
+
       <!-- 分页 -->
       <div v-if="filteredData.length > 0" class="pagination">
         <div class="pagination-info">
           共 {{ filteredData.length }} 条记录，第 {{ pagination.currentPage }} / {{ Math.ceil(filteredData.length / pagination.pageSize) }} 页
         </div>
-        
+
         <div class="pagination-controls">
-          <button 
+          <button
             @click="handlePageChange(pagination.currentPage - 1)"
             :disabled="pagination.currentPage <= 1"
             class="page-btn"
           >
             上一页
           </button>
-          
+
           <div class="page-numbers">
             <button
               v-for="page in Math.min(5, Math.ceil(filteredData.length / pagination.pageSize))"
@@ -431,11 +431,11 @@ onMounted(() => {
             >
               {{ page }}
             </button>
-            
+
             <span v-if="Math.ceil(filteredData.length / pagination.pageSize) > 5" class="page-ellipsis">...</span>
           </div>
-          
-          <button 
+
+          <button
             @click="handlePageChange(pagination.currentPage + 1)"
             :disabled="pagination.currentPage >= Math.ceil(filteredData.length / pagination.pageSize)"
             class="page-btn"
@@ -817,67 +817,67 @@ onMounted(() => {
     gap: 16px;
     padding: 16px;
   }
-  
+
   .page-title {
     font-size: 20px;
   }
-  
+
   .refresh-btn {
     width: 100%;
   }
-  
+
   .filter-section {
     padding: 16px;
   }
-  
+
   .filter-row {
     flex-direction: column;
     gap: 16px;
   }
-  
+
   .filter-item {
     min-width: auto;
   }
-  
+
   .history-list {
     padding: 0 16px;
   }
-  
+
   .history-cards {
     grid-template-columns: 1fr;
     gap: 16px;
   }
-  
+
   .history-card {
     padding: 16px;
   }
-  
+
   .event-name {
     font-size: 16px;
   }
-  
+
   .pagination {
     flex-direction: column;
     align-items: center;
     gap: 16px;
     padding: 16px;
   }
-  
+
   .pagination-info {
     order: 2;
   }
-  
+
   .pagination-controls {
     order: 1;
     flex-wrap: wrap;
     justify-content: center;
   }
-  
+
   .page-btn {
     padding: 6px 12px;
     font-size: 12px;
   }
-  
+
   .page-number {
     min-width: 36px;
     padding: 6px 10px;

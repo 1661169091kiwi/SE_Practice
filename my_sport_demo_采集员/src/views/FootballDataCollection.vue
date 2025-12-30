@@ -114,13 +114,13 @@ onUnmounted(() => {
 
 <template>
   <div class="football-data-collection">
-    
+
     <!-- 加载状态 -->
     <div v-if="isLoading" class="loading-container">
       <div class="loading-spinner"></div>
       <p>加载中...</p>
     </div>
-    
+
     <!-- 数据录入内容 -->
     <div v-else class="collection-content">
       <!-- 实时比分 -->
@@ -150,28 +150,28 @@ onUnmounted(() => {
       <!-- 首发阵容 -->
       <div class="form-section lineup-section">
         <h2 class="section-title">首发阵容</h2>
-        
+
         <!-- 主队阵容 -->
         <div class="team-lineup">
           <h3 class="team-title">{{ eventInfo.teamA }}</h3>
           <div class="player-list">
             <div v-for="player in lineups.teamA" :key="player.id" class="player-item">
-              <input 
+              <input
                 v-model="player.name"
-                type="text" 
+                type="text"
                 placeholder="球员姓名"
                 class="player-input"
               />
               <label class="checkbox-label">
-                <input 
-                  v-model="player.isStarting" 
+                <input
+                  v-model="player.isStarting"
                   type="checkbox"
                   class="starting-checkbox"
                 />
                 首发
               </label>
-              <button 
-                @click="removePlayer('teamA', player.id)" 
+              <button
+                @click="removePlayer('teamA', player.id)"
                 class="remove-btn"
                 :disabled="lineups.teamA.length <= 11"
               >
@@ -183,28 +183,28 @@ onUnmounted(() => {
             </button>
           </div>
         </div>
-        
+
         <!-- 客队阵容 -->
         <div class="team-lineup">
           <h3 class="team-title">{{ eventInfo.teamB }}</h3>
           <div class="player-list">
             <div v-for="player in lineups.teamB" :key="player.id" class="player-item">
-              <input 
+              <input
                 v-model="player.name"
-                type="text" 
+                type="text"
                 placeholder="球员姓名"
                 class="player-input"
               />
               <label class="checkbox-label">
-                <input 
-                  v-model="player.isStarting" 
+                <input
+                  v-model="player.isStarting"
                   type="checkbox"
                   class="starting-checkbox"
                 />
                 首发
               </label>
-              <button 
-                @click="removePlayer('teamB', player.id)" 
+              <button
+                @click="removePlayer('teamB', player.id)"
                 class="remove-btn"
                 :disabled="lineups.teamB.length <= 11"
               >
@@ -222,7 +222,7 @@ onUnmounted(() => {
 
 
     </div>
-    
+
     <!-- 保存操作由父组件BaseDataCollection统一处理 -->
   </div>
 </template>
@@ -627,47 +627,47 @@ onUnmounted(() => {
     padding: 16px;
     gap: 16px;
   }
-  
+
   .form-section {
     padding: 16px;
   }
-  
+
   .score-display {
     flex-direction: column;
     gap: 16px;
   }
-  
+
   .team-score {
     flex-direction: row;
     gap: 16px;
   }
-  
+
   .form-row {
     flex-direction: column;
     gap: 16px;
   }
-  
+
   .form-group {
     min-width: auto;
   }
-  
+
   .add-event-btn {
     align-self: stretch;
   }
-  
+
   .event-info {
     flex-wrap: wrap;
   }
-  
+
   .ranking-table {
     font-size: 12px;
   }
-  
+
   .ranking-table th,
   .ranking-table td {
     padding: 8px 4px;
   }
-  
+
   .table-input.small {
     max-width: 40px;
     padding: 4px;
