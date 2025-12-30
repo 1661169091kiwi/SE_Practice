@@ -211,28 +211,45 @@ onMounted(() => {
 <style scoped>
 .event-selection-container {
   min-height: 100vh;
-  background: radial-gradient(circle at top, #e6f1ff 0, var(--background-secondary) 45%, #edf0f5 100%);
+  background: linear-gradient(135deg, #f8fafc 0%, #e0e7ff 25%, #f3e8ff 50%, #fce7f3 75%, #f8fafc 100%);
+  background-size: 400% 400%;
+  animation: gradientShift 20s ease infinite;
   display: flex;
   flex-direction: column;
 }
 
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
 .page-header {
-  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
-  color: var(--text-white);
-  padding: 16px 20px;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+  color: white;
+  padding: 20px 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   position: sticky;
   top: 0;
   z-index: 100;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+  backdrop-filter: blur(10px);
 }
 
 .header-left h1 {
-  font-size: 18px;
-  font-weight: 500;
+  font-size: 20px;
+  font-weight: 600;
   margin: 0;
+  letter-spacing: 0.5px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .header-right {
@@ -242,35 +259,40 @@ onMounted(() => {
 
 .refresh-button,
 .logout-button {
-  background-color: rgba(255, 255, 255, 0.2);
-  color: var(--text-white);
-  border: none;
-  padding: 6px 12px;
-  border-radius: var(--border-radius-sm);
+  background-color: rgba(255, 255, 255, 0.25);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 8px 16px;
+  border-radius: 10px;
   font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.3s, transform 0.2s;
+  transition: all 0.3s var(--transition-bezier);
+  backdrop-filter: blur(10px);
 }
 
 .refresh-button:hover,
 .logout-button:hover {
-  background-color: rgba(255, 255, 255, 0.3);
-  transform: translateY(-1px);
+  background-color: rgba(255, 255, 255, 0.35);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .refresh-button:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 
 .filter-bar {
-  background-color: var(--background-primary);
-  padding: 16px 20px;
+  background-color: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(20px);
+  padding: 20px 24px;
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  border-bottom: 1px solid var(--border-color);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  gap: 20px;
+  border-bottom: 1px solid rgba(229, 231, 235, 0.8);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .filter-item {
@@ -280,185 +302,233 @@ onMounted(() => {
 }
 
 .filter-item label {
-  font-size: 14px;
-  color: var(--text-secondary);
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 500;
+  letter-spacing: 0.3px;
 }
 
 .filter-select {
-  padding: 8px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius-md);
+  padding: 10px 14px;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
   font-size: 14px;
-  background-color: var(--background-primary);
+  background-color: white;
+  color: #374151;
+  font-weight: 500;
+  transition: all 0.3s var(--transition-bezier);
+  cursor: pointer;
+}
+
+.filter-select:hover {
+  border-color: #d1d5db;
 }
 
 .filter-select:focus {
   outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(42, 122, 226, 0.18);
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
 }
 
 .event-list {
   flex: 1;
-  padding: 16px 20px;
+  padding: 20px 24px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .loading-state,
 .empty-state {
   text-align: center;
-  padding: 40px 0;
-  color: var(--text-tertiary);
+  padding: 60px 0;
+  color: #9ca3af;
+  font-size: 15px;
 }
 
 .event-card {
-  background-color: var(--background-primary);
-  border-radius: var(--border-radius-lg);
-  padding: 16px;
-  box-shadow: var(--shadow-md);
+  background-color: white;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06);
   position: relative;
-  border: 1px solid var(--border-color);
-  transition: transform 0.2s var(--transition-bezier), box-shadow 0.2s var(--transition-bezier);
+  border: 1px solid rgba(229, 231, 235, 0.8);
+  transition: all 0.3s var(--transition-bezier);
+  overflow: hidden;
+}
+
+.event-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #6366f1, #8b5cf6, #a855f7);
+  opacity: 0;
+  transition: opacity 0.3s;
 }
 
 .event-card:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-lg);
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.event-card:hover::before {
+  opacity: 1;
 }
 
 .event-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .event-name {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 600;
+  color: #1f2937;
   margin: 0;
   flex: 1;
-  padding-right: 8px;
+  padding-right: 12px;
+  letter-spacing: 0.2px;
 }
 
 .sport-tag {
-  padding: 4px 8px;
+  padding: 6px 12px;
   border-radius: 999px;
   font-size: 12px;
+  font-weight: 600;
   color: white;
-  background-color: var(--primary-color);
+  background-color: #6366f1;
+  letter-spacing: 0.3px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .sport-tag.football {
-  background-color: #1890ff;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
 }
 
 .sport-tag.basketball {
-  background-color: #52c41a;
+  background: linear-gradient(135deg, #10b981, #059669);
 }
 
 .sport-tag.badminton {
-  background-color: #faad14;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
 }
 
 .sport-tag.volleyball {
-  background-color: #f5222d;
+  background: linear-gradient(135deg, #ef4444, #dc2626);
 }
 
 .sport-tag.water {
-  background-color: #722ed1;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
 }
 
 .event-info {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .teams {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  margin-bottom: 12px;
-  padding: 12px 0;
-  background-color: var(--background-tertiary);
-  border-radius: var(--border-radius-md);
+  gap: 20px;
+  margin-bottom: 16px;
+  padding: 16px 0;
+  background: linear-gradient(135deg, #f9fafb, #f3f4f6);
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
 }
 
 .team {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 600;
+  color: #1f2937;
+  letter-spacing: 0.3px;
 }
 
 .vs {
   font-size: 14px;
-  color: var(--text-tertiary);
-  font-weight: 400;
+  color: #9ca3af;
+  font-weight: 600;
+  letter-spacing: 2px;
 }
 
 .event-details {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .detail-item {
   font-size: 14px;
   margin: 0;
   display: flex;
-  gap: 4px;
+  gap: 6px;
 }
 
 .detail-item .label {
-  color: var(--text-secondary);
-}
-
-.detail-item .value {
-  color: var(--text-primary);
+  color: #6b7280;
   font-weight: 500;
 }
 
+.detail-item .value {
+  color: #1f2937;
+  font-weight: 600;
+}
+
 .detail-item .value.not_started {
-  color: #faad14;
+  color: #f59e0b;
 }
 
 .detail-item .value.in_progress {
-  color: #52c41a;
+  color: #10b981;
 }
 
 .collect-button {
   position: absolute;
-  bottom: 16px;
-  right: 16px;
-  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
-  color: var(--text-white);
+  bottom: 20px;
+  right: 20px;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: white;
   border: none;
-  padding: 8px 16px;
-  border-radius: var(--border-radius-md);
+  padding: 10px 20px;
+  border-radius: 10px;
   font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all var(--transition-normal);
-  box-shadow: var(--shadow-sm);
+  transition: all 0.3s var(--transition-bezier);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+  letter-spacing: 0.3px;
 }
 
 .collect-button:hover {
-  background: linear-gradient(135deg, var(--primary-hover) 0%, var(--primary-active) 100%);
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+  transform: translateY(-2px);
 }
 
- .collect-button:active {
+.collect-button:active {
   transform: translateY(0);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
 }
 
 /* 移动端适配 */
 @media (max-width: 768px) {
+  .page-header {
+    padding: 16px 20px;
+  }
+
+  .header-left h1 {
+    font-size: 18px;
+  }
+
   .filter-bar {
     flex-direction: column;
+    padding: 16px 20px;
   }
   
   .filter-item {
@@ -471,16 +541,31 @@ onMounted(() => {
   
   .teams {
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
+    padding: 14px 0;
   }
   
   .event-header {
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
   }
   
   .sport-tag {
     align-self: flex-start;
+  }
+
+  .event-list {
+    padding: 16px 20px;
+  }
+
+  .event-card {
+    padding: 16px;
+  }
+
+  .collect-button {
+    position: static;
+    width: 100%;
+    margin-top: 16px;
   }
 }
 </style>
