@@ -104,7 +104,7 @@ const showToast = (message, type = 'info') => {
 // 加载用户信息
 const loadUserInfo = () => {
   isLoading.value = true
-  
+
   // 模拟API请求
   setTimeout(() => {
     // 这里可以替换为真实的API请求逻辑
@@ -128,27 +128,27 @@ const handlePasswordSubmit = () => {
     showToast('请输入当前密码', 'error')
     return
   }
-  
+
   const newPasswordError = validatePassword(passwordForm.newPassword)
   if (newPasswordError) {
     showToast(newPasswordError, 'error')
     return
   }
-  
+
   if (passwordForm.newPassword !== passwordForm.confirmPassword) {
     showToast('两次输入的新密码不一致', 'error')
     return
   }
-  
+
   uiState.isSubmitting = true
-  
+
   // 模拟API请求
   setTimeout(() => {
     uiState.isSubmitting = false
-    
+
     // 模拟修改成功
     showToast('密码修改成功')
-    
+
     // 重置表单
     passwordForm.currentPassword = ''
     passwordForm.newPassword = ''
@@ -171,7 +171,7 @@ const handleLogout = () => {
     // 清除本地存储的认证信息
     localStorage.removeItem('authToken')
     localStorage.removeItem('userInfo')
-    
+
     // 重定向到登录页面
     router.replace('/login')
   }
@@ -187,18 +187,18 @@ onMounted(() => {
   <div class="profile-view">
     <!-- 赛事信息头部 -->
     <MatchHeader :event="eventInfo" />
-    
+
     <!-- 页面标题 -->
     <div class="page-header">
       <h1 class="page-title">个人中心</h1>
     </div>
-    
+
     <!-- 加载状态 -->
     <div v-if="isLoading" class="loading-container">
       <div class="loading-spinner"></div>
       <p>加载中...</p>
     </div>
-    
+
     <!-- 主内容区域 -->
     <div v-else class="profile-content">
       <!-- 用户信息卡片 -->
@@ -209,17 +209,17 @@ onMounted(() => {
           </div>
           <img v-else :src="userInfo.avatar" alt="用户头像" class="avatar">
         </div>
-        
+
         <div class="user-info">
           <h2 class="user-name">{{ userInfo.name }}</h2>
           <p class="user-username">{{ userInfo.studentId }}</p>
         </div>
       </div>
-      
+
       <!-- 数据统计 -->
       <div class="stats-container">
-        <div 
-          v-for="stat in stats" 
+        <div
+          v-for="stat in stats"
           :key="stat.label"
           class="stat-card"
         >
@@ -230,11 +230,11 @@ onMounted(() => {
           </div>
         </div>
       </div>
-      
+
       <!-- 菜单列表 -->
       <div class="menu-container">
-        <div 
-          v-for="menu in menuItems" 
+        <div
+          v-for="menu in menuItems"
           :key="menu.id"
           class="menu-section"
         >
@@ -242,12 +242,12 @@ onMounted(() => {
             <span class="menu-icon">{{ menu.icon }}</span>
             <span class="menu-text">{{ menu.title }}</span>
           </div>
-          
+
           <div class="menu-content">
             <!-- 信息项 -->
             <div v-if="menu.items" class="info-items">
-              <div 
-                v-for="item in menu.items" 
+              <div
+                v-for="item in menu.items"
                 :key="item.label"
                 class="info-item"
               >
@@ -255,11 +255,11 @@ onMounted(() => {
                 <span class="info-value">{{ item.value }}</span>
               </div>
             </div>
-            
+
             <!-- 操作项 -->
             <div v-if="menu.actions" class="action-items">
-              <div 
-                v-for="action in menu.actions" 
+              <div
+                v-for="action in menu.actions"
                 :key="action.label"
                 class="action-item"
                 @click="action.action"
@@ -270,9 +270,9 @@ onMounted(() => {
             </div>
           </div>
         </div>
-        
+
         <!-- 退出登录按钮 -->
-        <button 
+        <button
           @click="handleLogout"
           class="logout-button"
         >
@@ -280,7 +280,7 @@ onMounted(() => {
         </button>
       </div>
     </div>
-    
+
     <!-- 密码修改弹窗 -->
     <div v-if="uiState.showPasswordForm" class="modal-overlay" @click="handlePasswordCancel">
       <div class="modal-content" @click.stop>
@@ -288,18 +288,18 @@ onMounted(() => {
           <h3 class="modal-title">修改密码</h3>
           <button @click="handlePasswordCancel" class="modal-close">×</button>
         </div>
-        
+
         <div class="modal-body">
           <div class="form-group">
             <label class="form-label">当前密码</label>
             <div class="password-input-container">
-              <input 
+              <input
                 v-model="passwordForm.currentPassword"
                 :type="uiState.showCurrentPassword ? 'text' : 'password'"
                 placeholder="请输入当前密码"
                 class="form-input"
               />
-              <button 
+              <button
                 type="button"
                 @click="uiState.showCurrentPassword = !uiState.showCurrentPassword"
                 class="toggle-password"
@@ -308,17 +308,17 @@ onMounted(() => {
               </button>
             </div>
           </div>
-          
+
           <div class="form-group">
             <label class="form-label">新密码</label>
             <div class="password-input-container">
-              <input 
+              <input
                 v-model="passwordForm.newPassword"
                 :type="uiState.showNewPassword ? 'text' : 'password'"
                 placeholder="请输入新密码"
                 class="form-input"
               />
-              <button 
+              <button
                 type="button"
                 @click="uiState.showNewPassword = !uiState.showNewPassword"
                 class="toggle-password"
@@ -328,17 +328,17 @@ onMounted(() => {
             </div>
             <p class="form-hint">密码长度不少于6位</p>
           </div>
-          
+
           <div class="form-group">
             <label class="form-label">确认新密码</label>
             <div class="password-input-container">
-              <input 
+              <input
                 v-model="passwordForm.confirmPassword"
                 :type="uiState.showConfirmPassword ? 'text' : 'password'"
                 placeholder="请再次输入新密码"
                 class="form-input"
               />
-              <button 
+              <button
                 type="button"
                 @click="uiState.showConfirmPassword = !uiState.showConfirmPassword"
                 class="toggle-password"
@@ -348,16 +348,16 @@ onMounted(() => {
             </div>
           </div>
         </div>
-        
+
         <div class="modal-footer">
-          <button 
+          <button
             @click="handlePasswordCancel"
             class="btn-secondary"
             :disabled="uiState.isSubmitting"
           >
             取消
           </button>
-          <button 
+          <button
             @click="handlePasswordSubmit"
             class="btn-primary"
             :disabled="uiState.isSubmitting"
@@ -368,13 +368,13 @@ onMounted(() => {
         </div>
       </div>
     </div>
-    
+
     <!-- 错误提示 -->
     <div v-if="uiState.error" class="toast error-toast">
       <span class="toast-icon">❌</span>
       <span class="toast-message">{{ uiState.error }}</span>
     </div>
-    
+
     <!-- 成功提示 -->
     <div v-if="uiState.success" class="toast success-toast">
       <span class="toast-icon">✅</span>
@@ -867,108 +867,108 @@ onMounted(() => {
   .page-header {
     padding: 16px;
   }
-  
+
   .page-title {
     font-size: 20px;
   }
-  
+
   .profile-content {
     padding: 0 16px;
     gap: 16px;
   }
-  
+
   .user-profile-card {
     flex-direction: column;
     text-align: center;
     padding: 20px;
   }
-  
+
   .avatar-placeholder,
   .avatar {
     width: 64px;
     height: 64px;
   }
-  
+
   .avatar-placeholder {
     font-size: 24px;
   }
-  
+
   .user-name {
     font-size: 20px;
   }
-  
+
   .stats-container {
     grid-template-columns: repeat(3, 1fr);
   }
-  
+
   .stat-card {
     flex-direction: column;
     text-align: center;
     padding: 16px;
     gap: 12px;
   }
-  
+
   .stat-icon {
     font-size: 24px;
   }
-  
+
   .stat-value {
     font-size: 20px;
   }
-  
+
   .menu-section {
     border-radius: 8px;
   }
-  
+
   .menu-title {
     padding: 14px 16px;
   }
-  
+
   .info-item {
     padding: 12px 16px;
   }
-  
+
   .action-item {
     padding: 14px 16px;
   }
-  
+
   .logout-button {
     border-radius: 8px;
   }
-  
+
   .modal-overlay {
     padding: 16px;
   }
-  
+
   .modal-content {
     border-radius: 8px;
   }
-  
+
   .modal-header,
   .modal-body,
   .modal-footer {
     padding: 16px;
   }
-  
+
   .modal-title {
     font-size: 16px;
   }
-  
+
   .modal-footer {
     flex-direction: column;
   }
-  
+
   .btn-secondary,
   .btn-primary {
     width: 100%;
   }
-  
+
   .toast {
     left: 16px;
     right: 16px;
     transform: none;
   }
-  
+
   @keyframes slideDown {
     from {
       opacity: 0;
