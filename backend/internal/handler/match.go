@@ -107,7 +107,6 @@ func AvailableMatchesForAthlete(w http.ResponseWriter, r *http.Request) {
 	util.OK(w, matches)
 }
 
-// JoinMatch 运动员报名参加比赛
 func JoinMatch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
