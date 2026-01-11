@@ -1,5 +1,5 @@
 <script setup>
-// 组件属性
+// 属性
 const props = defineProps({
   isSubmitting: {
     type: Boolean,
