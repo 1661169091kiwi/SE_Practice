@@ -30,18 +30,116 @@ func (r *MatchRepo) CreateMatch(match *model.Match) (int64, error) {
 	)
 }
 
+// InstantiateKnockoutMatch 实例化淘汰赛（将虚拟比赛转换为真实比赛）
+func (r *MatchRepo) InstantiateKnockoutMatch(knockoutMatchID int64, teamAId, teamBId int64) (int64, error) {
+	// 1. 获取淘汰赛详情
+	queryInfo := `
+		SELECT ks.event_id, CONCAT(ks.stage_name, ' ', km.match_order) as match_name, ks.stage_name as round, 
+			   CAST(COALESCE(km.scheduled_time, '1000-01-01 00:00:00') AS DATETIME) as match_time
+		FROM knockout_matches km
+		JOIN knockout_stages ks ON km.stage_id = ks.stage_id
+		WHERE km.knockout_match_id = ?
+	`
+	var m model.Match
+	// 使用 time.Time 接收，利用驱动的 parseTime=True
+	err := db.QueryRow(queryInfo, knockoutMatchID).Scan(&m.EventID, &m.Name, &m.Round, &m.Time)
+	if err != nil {
+		return 0, err
+	}
+
+	// 2. 开启事务
+	tx, err := db.BeginTransaction()
+	if err != nil {
+		return 0, err
+	}
+
+	// 3. 创建真实比赛
+	queryInsert := `INSERT INTO matches 
+		(event_id, match_name, round, match_time, team_a_id, team_b_id, status) 
+		VALUES (?, ?, ?, ?, ?, ?, 'not_started')`
+
+	res, err := tx.Exec(queryInsert, m.EventID, m.Name, m.Round, m.Time, teamAId, teamBId)
+	if err != nil {
+		_ = tx.Rollback()
+		return 0, err
+	}
+	newMatchID, err := res.LastInsertId()
+	if err != nil {
+		_ = tx.Rollback()
+		return 0, err
+	}
+
+	// 4. 关联淘汰赛
+	queryUpdate := `UPDATE knockout_matches SET match_id = ? WHERE knockout_match_id = ?`
+	_, err = tx.Exec(queryUpdate, newMatchID, knockoutMatchID)
+	if err != nil {
+		_ = tx.Rollback()
+		return 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+
+	return newMatchID, nil
+}
+
 // GetMatchByID 获取比赛详情
 func (r *MatchRepo) GetMatchByID(id int64) (*model.Match, error) {
-	query := `SELECT match_id, event_id, match_name, COALESCE(round, ''), match_time, 
-	                 team_a_id, team_b_id, score_team_a, score_team_b,
-	                 half_score_team_a, half_score_team_b, status,
-	                 COALESCE(collector1_id, 0), COALESCE(collector2_id, 0) 
-	          FROM matches WHERE match_id = ?`
+	if id < 0 {
+		// Handle knockout match (virtual ID)
+		knockoutID := -id
+
+		// Check if linked to a real match
+		var realMatchID sql.NullInt64
+		err := db.QueryRow("SELECT match_id FROM knockout_matches WHERE knockout_match_id = ?", knockoutID).Scan(&realMatchID)
+		if err == nil && realMatchID.Valid {
+			return r.GetMatchByID(realMatchID.Int64)
+		}
+
+		query := `
+			SELECT ks.event_id, e.event_name, CONCAT(ks.stage_name, ' ', km.match_order) as match_name, ks.stage_name as round, 
+				   CAST(COALESCE(km.scheduled_time, '1000-01-01 00:00:00') AS DATETIME) as match_time
+			FROM knockout_matches km
+			JOIN knockout_stages ks ON km.stage_id = ks.stage_id
+			JOIN events e ON ks.event_id = e.event_id
+			WHERE km.knockout_match_id = ?
+		`
+		var m model.Match
+		m.ID = id
+		m.TeamAID = 0
+		m.TeamBID = 0
+		m.ScoreA = 0
+		m.ScoreB = 0
+		m.HalfScoreA = 0
+		m.HalfScoreB = 0
+		m.Status = "not_started"
+		m.Collector1ID = 0
+		m.Collector2ID = 0
+
+		err = db.QueryRow(query, knockoutID).Scan(&m.EventID, &m.EventName, &m.Name, &m.Round, &m.Time)
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return &m, nil
+	}
+
+	query := `SELECT m.match_id, m.event_id, e.event_name, m.match_name, COALESCE(m.round, ''), m.match_time, 
+	                 m.team_a_id, m.team_b_id, m.score_team_a, m.score_team_b,
+	                 m.half_score_team_a, m.half_score_team_b, m.status,
+	                 COALESCE(m.collector1_id, 0), COALESCE(m.collector2_id, 0) 
+	          FROM matches m
+	          JOIN events e ON m.event_id = e.event_id
+	          WHERE m.match_id = ?`
 
 	var match model.Match
 	err := db.QueryRow(query, id).Scan(
 		&match.ID,
 		&match.EventID,
+		&match.EventName,
 		&match.Name,
 		&match.Round,
 		&match.Time,
@@ -63,8 +161,10 @@ func (r *MatchRepo) GetMatchByID(id int64) (*model.Match, error) {
 
 // ListMatchesByEvent 按赛事ID列出比赛
 func (r *MatchRepo) ListMatchesByEvent(eventID int64) ([]model.Match, error) {
-	query := `SELECT m.match_id, m.event_id, e.sport_id, m.match_name, COALESCE(m.round, ''), m.match_time, 
-	                 m.team_a_id, ta.team_name, m.team_b_id, tb.team_name, m.status,
+	query := `SELECT m.match_id, m.event_id, e.event_name, e.sport_id, m.match_name, COALESCE(m.round, '') as round, m.match_time, 
+	                 m.team_a_id, ta.team_name, COALESCE(ta.avatar_url, '') as team_a_avatar,
+	                 m.team_b_id, tb.team_name, COALESCE(tb.avatar_url, '') as team_b_avatar,
+	                 m.status,
 	                 m.score_team_a, m.score_team_b
 	          FROM matches m
 	          JOIN events e ON m.event_id = e.event_id
@@ -83,8 +183,10 @@ func (r *MatchRepo) ListMatchesByEvent(eventID int64) ([]model.Match, error) {
 		var m model.Match
 		var taName, tbName sql.NullString
 		if err := rows.Scan(
-			&m.ID, &m.EventID, &m.SportID, &m.Name, &m.Round, &m.Time,
-			&m.TeamAID, &taName, &m.TeamBID, &tbName, &m.Status,
+			&m.ID, &m.EventID, &m.EventName, &m.SportID, &m.Name, &m.Round, &m.Time,
+			&m.TeamAID, &taName, &m.TeamAAvatar,
+			&m.TeamBID, &tbName, &m.TeamBAvatar,
+			&m.Status,
 			&m.ScoreA, &m.ScoreB,
 		); err != nil {
 			return nil, err
@@ -143,14 +245,29 @@ func (r *MatchRepo) DeleteMatch(matchID int64) error {
 
 // ListAllMatches 获取所有比赛
 func (r *MatchRepo) ListAllMatches() ([]model.Match, error) {
-	query := `SELECT m.match_id, m.event_id, e.sport_id, m.match_name, COALESCE(m.round, ''), m.match_time, 
-	                 m.team_a_id, ta.team_name, m.team_b_id, tb.team_name, m.status,
-	                 m.score_team_a, m.score_team_b
-	          FROM matches m
-	          JOIN events e ON m.event_id = e.event_id
-	          LEFT JOIN teams ta ON m.team_a_id = ta.team_id
-	          LEFT JOIN teams tb ON m.team_b_id = tb.team_id
-	          ORDER BY m.match_time ASC`
+	query := `SELECT * FROM (
+		SELECT m.match_id, m.event_id, e.event_name, e.sport_id, m.match_name, COALESCE(m.round, '') as round, m.match_time, 
+		       m.team_a_id, ta.team_name as team_a_name, COALESCE(ta.avatar_url, '') as team_a_avatar,
+		       m.team_b_id, tb.team_name as team_b_name, COALESCE(tb.avatar_url, '') as team_b_avatar,
+		       m.status, m.score_team_a, m.score_team_b
+		FROM matches m
+		JOIN events e ON m.event_id = e.event_id
+		LEFT JOIN teams ta ON m.team_a_id = ta.team_id
+		LEFT JOIN teams tb ON m.team_b_id = tb.team_id
+		
+		UNION ALL
+		
+		SELECT -(km.knockout_match_id) as match_id, ks.event_id, e.event_name, e.sport_id, CONCAT(ks.stage_name, ' ', km.match_order) as match_name, ks.stage_name as round, CAST(COALESCE(km.scheduled_time, '1000-01-01 00:00:00') AS DATETIME) as match_time,
+		       0 as team_a_id, 'TBD' as team_a_name, '' as team_a_avatar,
+		       0 as team_b_id, 'TBD' as team_b_name, '' as team_b_avatar,
+		       'not_started' as status,
+		       0 as score_team_a, 0 as score_team_b
+		FROM knockout_matches km
+		JOIN knockout_stages ks ON km.stage_id = ks.stage_id
+		JOIN events e ON ks.event_id = e.event_id
+		WHERE km.match_id IS NULL
+	) AS combined
+	ORDER BY match_time ASC`
 
 	rows, err := db.Query(query)
 	if err != nil {
@@ -163,8 +280,10 @@ func (r *MatchRepo) ListAllMatches() ([]model.Match, error) {
 		var m model.Match
 		var taName, tbName sql.NullString
 		if err := rows.Scan(
-			&m.ID, &m.EventID, &m.SportID, &m.Name, &m.Round, &m.Time,
-			&m.TeamAID, &taName, &m.TeamBID, &tbName, &m.Status,
+			&m.ID, &m.EventID, &m.EventName, &m.SportID, &m.Name, &m.Round, &m.Time,
+			&m.TeamAID, &taName, &m.TeamAAvatar,
+			&m.TeamBID, &tbName, &m.TeamBAvatar,
+			&m.Status,
 			&m.ScoreA, &m.ScoreB,
 		); err != nil {
 			return nil, err
@@ -216,7 +335,7 @@ func (r *MatchRepo) UpdateMatch(match *model.Match) error {
 func (r *MatchRepo) GetMatchComments(matchID int64) ([]model.MatchComment, error) {
 	query := `
         SELECT mc.id, mc.match_id, mc.student_id, mc.content, mc.created_at,
-               u.name, u.avatar_url
+               u.name, COALESCE(u.avatar_url, '')
         FROM match_comments mc
         JOIN users u ON mc.student_id = u.student_id
         WHERE mc.match_id = ?
@@ -705,7 +824,6 @@ func (r *MatchRepo) GetMatchesBySubscription(studentID string) ([]model.Subscrib
 
 		// Format time for JSON
 		item.MatchTime = matchTime.Format("2006-01-02 15:04:05")
-		item.MatchVenue = "校体育馆"
 
 		// Populate scores
 		item.ScoreA = scoreA
@@ -766,6 +884,33 @@ func (r *MatchRepo) CheckSubscription(studentID string, eventID int64, matchID i
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// GetSubscriptionMaps 获取用户的订阅映射 (eventIDs, matchIDs)
+func (r *MatchRepo) GetSubscriptionMaps(studentID string) (map[int64]bool, map[int64]bool, error) {
+	query := `SELECT event_id, match_id FROM subscriptions WHERE student_id = ?`
+	rows, err := db.Query(query, studentID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	eventSubs := make(map[int64]bool)
+	matchSubs := make(map[int64]bool)
+
+	for rows.Next() {
+		var eventID int64
+		var matchID sql.NullInt64
+		if err := rows.Scan(&eventID, &matchID); err != nil {
+			return nil, nil, err
+		}
+		if matchID.Valid {
+			matchSubs[matchID.Int64] = true
+		} else {
+			eventSubs[eventID] = true
+		}
+	}
+	return eventSubs, matchSubs, nil
 }
 
 // SubscribeToEvent 订阅赛事 (Renamed or Overloaded concept)

@@ -14,13 +14,13 @@ import (
 	"se_practice/backend/internal/router"
 )
 
-// Reusing DSN from other tests
-const approvalTestDSN = "root:15329554862ph@tcp(localhost:3306)/sports_management?charset=utf8mb4&parseTime=True&loc=Local"
-
 func TestApprovalFlow(t *testing.T) {
+	if dsn == "" {
+		t.Skip("TEST_DB_DSN or DB_DSN is required to run database-backed tests")
+	}
 	// 1. Initialize DB
-	if _, err := db.Init(approvalTestDSN); err != nil {
-		t.Fatalf("Failed to connect to DB: %v", err)
+	if _, err := db.Init(dsn); err != nil {
+		t.Skipf("Skip DB-backed test: %v", err)
 	}
 	// Initialize Schema to ensure new columns exist
 	if err := db.InitSchema(); err != nil {

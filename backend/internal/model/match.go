@@ -6,19 +6,23 @@ import "time"
 type Match struct {
 	ID           int64     `json:"match_id"`
 	EventID      int64     `json:"event_id"`
+	EventName    string    `json:"event_name"`
 	SportID      int64     `json:"sport_id"`
 	Name         string    `json:"match_name"`
 	Round        string    `json:"round"`
 	Time         time.Time `json:"match_time"`
 	TeamAID      int64     `json:"team_a_id"`
 	TeamAName    string    `json:"team_a_name"`
+	TeamAAvatar  string    `json:"team_a_avatar"`
 	TeamBID      int64     `json:"team_b_id"`
 	TeamBName    string    `json:"team_b_name"`
+	TeamBAvatar  string    `json:"team_b_avatar"`
 	ScoreA       int       `json:"score_team_a"`
 	ScoreB       int       `json:"score_team_b"`
 	HalfScoreA   int       `json:"half_score_team_a"`
 	HalfScoreB   int       `json:"half_score_team_b"`
 	Status       string    `json:"status"` // not_started/ongoing/finished/cancelled
+	IsSubscribed bool      `json:"is_subscribed"`
 	Collector1ID int64     `json:"collector1_id"`
 	Collector2ID int64     `json:"collector2_id"`
 }
@@ -50,8 +54,9 @@ type MatchDetailResponse struct {
 
 // TeamBrief 队伍简要信息
 type TeamBrief struct {
-	ID   int64  `json:"team_id"`
-	Name string `json:"team_name"`
+	ID     int64  `json:"team_id"`
+	Name   string `json:"team_name"`
+	Avatar string `json:"avatar"`
 }
 
 // UserBrief 用户简要信息
@@ -89,6 +94,7 @@ type SubscribedMatchResponse struct {
 // SubscribedMatchItem 已订阅比赛单项
 type SubscribedMatchItem struct {
 	MatchID     string      `json:"matchId"`     // 比赛唯一编号
+	EventID     int64       `json:"eventId"`     // 赛事ID
 	MatchTime   string      `json:"matchTime"`   // 比赛时间
 	MatchVenue  string      `json:"matchVenue"`  // 比赛地点
 	HomeTeam    TeamWrapper `json:"homeTeam"`    // 主队信息

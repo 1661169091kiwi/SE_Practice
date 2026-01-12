@@ -9,7 +9,6 @@ const FootballDataCollection = () => import('../views/FootballDataCollection.vue
 const BasketballDataCollection = () => import('../views/BasketballDataCollection.vue')
 const BadmintonDataCollection = () => import('../views/BadmintonDataCollection.vue')
 const VolleyballDataCollection = () => import('../views/VolleyballDataCollection.vue')
-const WaterSportsDataCollection = () => import('../views/WaterSportsDataCollection.vue')
 const DataPreview = () => import('../views/DataPreview.vue')
 const HistoryView = () => import('../views/HistoryView.vue')
 const ProfileView = () => import('../views/ProfileView.vue')
@@ -18,6 +17,13 @@ const AdminDashboard = () => import('../views/AdminDashboard.vue')
 // 创建路由实例
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) {
+      return savedPosition
+    } else {
+      return { top: 0 }
+    }
+  },
   routes: [
     {
       path: '/',
@@ -53,6 +59,12 @@ const router = createRouter({
       path: '/match/:id',
       name: 'match-detail',
       component: () => import('../views/MatchDetailView.vue'),
+      meta: { roles: ['student', 'collector', 'admin', 'athlete'] }
+    },
+    {
+      path: '/student/standings',
+      name: 'student-standings-index',
+      component: () => import('../views/StandingsView.vue'),
       meta: { roles: ['student', 'collector', 'admin', 'athlete'] }
     },
     {
@@ -93,13 +105,6 @@ const router = createRouter({
       path: '/volleyball-data/:eventId',
       name: 'volleyball-data',
       component: VolleyballDataCollection,
-      props: true,
-      meta: { requiresAuth: true, roles: ['collector', 'admin'] },
-    },
-    {
-      path: '/water-sports-data/:eventId',
-      name: 'water-sports-data',
-      component: WaterSportsDataCollection,
       props: true,
       meta: { requiresAuth: true, roles: ['collector', 'admin'] },
     },
@@ -150,14 +155,8 @@ router.beforeEach((to, from, next) => {
   if (requiresAuth && !token) {
     next('/login')
   } else if (token && to.name === 'login') {
-    // 根据角色重定向
-    if (roles.includes('admin')) {
-      next('/admin/dashboard')
-    } else if (roles.includes('collector')) {
-      next('/events')
-    } else {
-      next('/student/events')
-    }
+    // 即使已登录，也允许访问登录页（方便切换账号或重新登录）
+    next()
   } else {
     // 检查角色权限
     if (to.meta.roles) {

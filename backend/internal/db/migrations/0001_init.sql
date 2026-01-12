@@ -89,12 +89,25 @@ CREATE TABLE IF NOT EXISTS events (
     sport_id INT NOT NULL,
     season VARCHAR(20),
     round VARCHAR(50),
-    format_type ENUM('points', 'group_knockout') NOT NULL,
+    format_type ENUM('points', 'knockout', 'group_knockout') NOT NULL,
     start_date DATE,
     end_date DATE,
     status ENUM('upcoming', 'ongoing', 'finished') DEFAULT 'upcoming',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (sport_id) REFERENCES sports(sport_id)
+);
+
+-- 赛事参赛队伍表（联赛/小组赛/淘汰赛均可复用）
+CREATE TABLE IF NOT EXISTS event_teams (
+    event_id INT NOT NULL,
+    team_id INT NOT NULL,
+    group_name VARCHAR(50) DEFAULT NULL,
+    slot INT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (event_id, team_id),
+    UNIQUE KEY unique_event_slot (event_id, slot),
+    FOREIGN KEY (event_id) REFERENCES events(event_id) ON DELETE CASCADE,
+    FOREIGN KEY (team_id) REFERENCES teams(team_id) ON DELETE CASCADE
 );
 
 -- 比赛表
@@ -211,6 +224,7 @@ CREATE TABLE IF NOT EXISTS standings (
     goals_against INT DEFAULT 0,
     goal_difference INT DEFAULT 0,
     points INT DEFAULT 0,
+    `rank` INT DEFAULT 0,
     FOREIGN KEY (event_id) REFERENCES events(event_id),
     FOREIGN KEY (team_id) REFERENCES teams(team_id),
     UNIQUE KEY unique_standing (event_id, team_id)
@@ -229,11 +243,12 @@ CREATE TABLE IF NOT EXISTS knockout_stages (
 CREATE TABLE IF NOT EXISTS knockout_matches (
     knockout_match_id INT AUTO_INCREMENT PRIMARY KEY,
     stage_id INT NOT NULL,
-    match_id INT NOT NULL,
+    match_id INT NULL,
+    match_order INT DEFAULT 0,
     prev_match_a_id INT,
     prev_match_b_id INT,
-    FOREIGN KEY (stage_id) REFERENCES knockout_stages(stage_id),
-    FOREIGN KEY (match_id) REFERENCES matches(match_id)
+    FOREIGN KEY (stage_id) REFERENCES knockout_stages(stage_id) ON DELETE CASCADE,
+    FOREIGN KEY (match_id) REFERENCES matches(match_id) ON DELETE SET NULL
 );
 
 SET FOREIGN_KEY_CHECKS = 1;

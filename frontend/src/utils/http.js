@@ -1,7 +1,7 @@
 import router from '../router'
 import { useAuthStore } from '../stores/auth'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081/api'
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
 
 function buildUrl(path, params) {
   const url = /^https?:\/\//.test(path) ? path : `${BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`
@@ -36,14 +36,37 @@ async function handleResponse(res) {
 
 async function request(path, { method = 'GET', headers = {}, body, params, auth = true } = {}) {
   const url = buildUrl(path, params)
+  const isFormData = body instanceof FormData
   const finalHeaders = {
     Accept: 'application/json',
-    ...(method !== 'GET' ? { 'Content-Type': 'application/json' } : {}),
+    ...(method !== 'GET' && !isFormData ? { 'Content-Type': 'application/json' } : {}),
     ...(auth ? getAuthHeader() : {}),
     ...headers,
   }
-  const res = await fetch(url, { method, headers: finalHeaders, body: body !== undefined ? JSON.stringify(body) : undefined })
+  const res = await fetch(url, { method, headers: finalHeaders, body: body !== undefined ? (isFormData ? body : JSON.stringify(body)) : undefined })
   await handleResponse(res)
+  if (!res.ok) {
+    const contentType = res.headers.get('content-type') || ''
+    let message = `请求失败 (${res.status})`
+    if (contentType.includes('application/json')) {
+      try {
+        const payload = await res.json()
+        message = payload?.message || payload?.msg || message
+      } catch {
+        message = `请求失败 (${res.status})`
+      }
+    } else {
+      try {
+        const text = await res.text()
+        if (text) message = text.substring(0, 200)
+      } catch {
+        message = `请求失败 (${res.status})`
+      }
+    }
+    const err = new Error(message)
+    err.status = res.status
+    throw err
+  }
   return res
 }
 

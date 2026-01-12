@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"se_practice/backend/internal/db"
 	"se_practice/backend/internal/middleware"
 	"se_practice/backend/internal/model"
 	"se_practice/backend/internal/service"
@@ -22,6 +24,43 @@ func Matches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if db.GetDB() == nil {
+		now := time.Now()
+		util.OK(w, []model.Match{
+			{
+				ID:        1,
+				EventID:   1,
+				SportID:   1,
+				Name:      "示例比赛 A",
+				Round:     "小组赛",
+				Time:      now.Add(2 * time.Hour),
+				TeamAID:   101,
+				TeamAName: "示例主队",
+				TeamBID:   102,
+				TeamBName: "示例客队",
+				ScoreA:    0,
+				ScoreB:    0,
+				Status:    "not_started",
+			},
+			{
+				ID:        2,
+				EventID:   1,
+				SportID:   1,
+				Name:      "示例比赛 B",
+				Round:     "小组赛",
+				Time:      now.Add(-30 * time.Minute),
+				TeamAID:   103,
+				TeamAName: "示例主队 2",
+				TeamBID:   104,
+				TeamBName: "示例客队 2",
+				ScoreA:    1,
+				ScoreB:    0,
+				Status:    "ongoing",
+			},
+		})
+		return
+	}
+
 	// 从查询参数获取赛事ID（可选）
 	eventIDStr := r.URL.Query().Get("event_id")
 	var eventID int64 = 0
@@ -34,15 +73,18 @@ func Matches(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 获取当前用户ID（可选，用于检查订阅状态）
+	studentID := r.URL.Query().Get("student_id")
+
 	// 调用服务层获取比赛列表
 	var matches []model.Match
 	view := r.URL.Query().Get("view")
 	if eventID > 0 {
 		// 按赛事ID筛选
-		matches, err = matchService.ListMatchesByEvent(eventID, view)
+		matches, err = matchService.ListMatchesByEvent(eventID, view, studentID)
 	} else {
 		// 获取所有比赛
-		matches, err = matchService.ListAllMatches(view)
+		matches, err = matchService.ListAllMatches(view, studentID)
 	}
 
 	if err != nil {
@@ -158,6 +200,28 @@ func MatchDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if db.GetDB() == nil {
+		now := time.Now()
+		detail := &model.MatchDetailResponse{
+			MatchID:   id,
+			EventID:   1,
+			MatchName: "示例比赛",
+			Round:     "小组赛",
+			MatchTime: now.Add(2 * time.Hour),
+			TeamA:     model.TeamBrief{ID: 101, Name: "示例主队"},
+			TeamB:     model.TeamBrief{ID: 102, Name: "示例客队"},
+			ScoreA:    0,
+			ScoreB:    0,
+			Status:    "not_started",
+			Collectors: []model.UserBrief{
+				{ID: 0},
+				{ID: 0},
+			},
+		}
+		util.OK(w, detail)
+		return
+	}
+
 	// 调用服务层获取比赛详情
 	detail, err := matchService.GetMatchDetail(id)
 	if err != nil {
@@ -203,6 +267,8 @@ func CreateMatch(w http.ResponseWriter, r *http.Request) {
 			util.Error(w, http.StatusNotFound, "event not found")
 		case "team a not found", "team b not found":
 			util.Error(w, http.StatusNotFound, err.Error())
+		case "team a is not approved", "team b is not approved", "event teams not configured", "team is not in event":
+			util.Error(w, http.StatusBadRequest, err.Error())
 		default:
 			util.Error(w, http.StatusInternalServerError, err.Error())
 		}
@@ -297,7 +363,7 @@ func UpdateMatch(w http.ResponseWriter, r *http.Request) {
 		switch err.Error() {
 		case "match not found", "event not found":
 			util.Error(w, http.StatusNotFound, err.Error())
-		case "team a not found", "team b not found":
+		case "team a not found", "team b not found", "team a is not approved", "team b is not approved", "event teams not configured", "team is not in event":
 			util.Error(w, http.StatusBadRequest, err.Error())
 		default:
 			util.Error(w, http.StatusInternalServerError, err.Error())
@@ -391,6 +457,19 @@ func SubscribeMatch(w http.ResponseWriter, r *http.Request) {
 		// 判断错误类型返回404或500
 		if err.Error() == "match not found" {
 			util.Error(w, http.StatusNotFound, err.Error())
+		} else if strings.Contains(err.Error(), "Duplicate entry") {
+			// 如果是重复订阅错误，视为成功
+			resp := model.SubscribeResponse{
+				StudentID:   req.StudentID,
+				MatchID:     req.MatchID,
+				OperateType: req.OperateType,
+			}
+			util.JSON(w, http.StatusOK, util.APIResponse{
+				Code:    200,
+				Message: "已订阅该比赛",
+				Data:    resp,
+			})
+			return
 		} else {
 			util.Error(w, http.StatusInternalServerError, err.Error())
 		}

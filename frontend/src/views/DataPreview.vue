@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import MatchHeader from '../components/MatchHeader.vue'
 
@@ -197,45 +197,6 @@ const volleyballData = ref({
   ]
 })
 
-// 水上运动预览数据
-const waterSportsData = ref({
-  category: '龙舟',
-  eventData: [
-    { rank: 1, team: '计算机学院', peopleCount: 20, eventName: '500米竞速', eventTime: '2023-11-10 10:00', finalResult: 118.5 },
-    { rank: 2, team: '机械学院', peopleCount: 20, eventName: '500米竞速', eventTime: '2023-11-10 10:00', finalResult: 122.3 },
-    { rank: 3, team: '商学院', peopleCount: 20, eventName: '500米竞速', eventTime: '2023-11-10 10:00', finalResult: 125.1 }
-  ],
-  segmentResults: [
-    {
-      team: '计算机学院',
-      segments: [
-        { name: '起航段', time: 30.2 },
-        { name: '中途段', time: 60.8 },
-        { name: '冲刺段', time: 27.5 },
-        { total: 118.5 }
-      ]
-    },
-    {
-      team: '机械学院',
-      segments: [
-        { name: '起航段', time: 32.4 },
-        { name: '中途段', time: 64.1 },
-        { name: '冲刺段', time: 25.8 },
-        { total: 122.3 }
-      ]
-    },
-    {
-      team: '商学院',
-      segments: [
-        { name: '起航段', time: 33.5 },
-        { name: '中途段', time: 65.7 },
-        { name: '冲刺段', time: 25.9 },
-        { total: 125.1 }
-      ]
-    }
-  ]
-})
-
 // 加载预览数据
 const loadPreviewData = () => {
   isLoading.value = true
@@ -266,8 +227,7 @@ const getSportTypeName = (type) => {
     football: '足球',
     basketball: '篮球',
     badminton: '羽毛球',
-    volleyball: '排球',
-    water_sports: '水上运动'
+    volleyball: '排球'
   }
   return typeMap[type] || type
 }
@@ -855,58 +815,6 @@ onMounted(() => {
               </tr>
             </tbody>
           </table>
-        </div>
-      </div>
-      
-      <!-- 水上运动数据预览 -->
-      <div v-else-if="sportType === 'water_sports'" class="sport-preview">
-        <div class="preview-section">
-          <h2 class="section-title">{{ waterSportsData.category }}赛事数据</h2>
-          <table class="rankings-table">
-            <thead>
-              <tr>
-                <th>排名</th>
-                <th>队伍</th>
-                <th>参赛人数</th>
-                <th>赛事名称</th>
-                <th>比赛时间</th>
-                <th>最终成绩(秒)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="data in waterSportsData.eventData" :key="data.rank">
-                <td>{{ data.rank }}</td>
-                <td>{{ data.team }}</td>
-                <td>{{ data.peopleCount }}</td>
-                <td>{{ data.eventName }}</td>
-                <td>{{ data.eventTime }}</td>
-                <td>{{ data.finalResult }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        
-        <div class="preview-section">
-          <h2 class="section-title">分段成绩详情</h2>
-          <div v-for="teamResult in waterSportsData.segmentResults" :key="teamResult.team" class="segment-team-result">
-            <h3 class="team-title">{{ teamResult.team }}</h3>
-            <table class="segments-table">
-              <thead>
-                <tr>
-                  <th>分段名称</th>
-                  <th>时间(秒)</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(segment, index) in teamResult.segments" :key="index">
-                  <td v-if="segment.name">{{ segment.name }}</td>
-                  <td v-else><strong>总计</strong></td>
-                  <td v-if="segment.time">{{ segment.time }}</td>
-                  <td v-else><strong>{{ segment.total }}</strong></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
         </div>
       </div>
     </div>

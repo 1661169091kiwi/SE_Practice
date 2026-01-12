@@ -1,21 +1,17 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-// import { useRoute } from 'vue-router'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { del } from '@/utils/http'
 
 const props = defineProps(['eventId', 'eventInfo'])
 
-// 单节比分
-const quarterScores = ref([
-  { quarter: 1, teamA: 0, teamB: 0 },
-  { quarter: 2, teamA: 0, teamB: 0 },
-  { quarter: 3, teamA: 0, teamB: 0 },
-  { quarter: 4, teamA: 0, teamB: 0 }
-])
+// 实时比分
+const scores = ref({
+  teamA: 0,
+  teamB: 0
+})
 
-
-
-// 首发阵容
-const lineups = ref({
+// 候选球员列表
+const candidates = ref({
   teamA: [],
   teamB: []
 })
@@ -27,20 +23,12 @@ const normalizeIn = (p) => ({
   number: p.number || '',
   position: p.position || ''
 })
-const normalizeKey = (p) => {
-  const id = String(p.id || '').trim()
-  if (id) return `id:${id}`
-  const nameKey = String(p.name || '').trim().toLowerCase()
-  const numKey = String(p.number || '').trim()
-  const posKey = String(p.position || '').trim().toLowerCase()
-  return `ext:${nameKey}|${numKey}|${posKey}`
-}
 const dedupPlayers = (arr) => {
   const out = []
   const seen = new Set()
-  for (const p of Array.isArray(arr) ? arr : []) {
+  for (const p of arr) {
     const np = normalizeIn(p)
-    const key = normalizeKey(np)
+    const key = np.id ? `id:${np.id}` : `ext:${np.name.trim().toLowerCase()}|${String(np.number).trim()}|${np.position.trim().toLowerCase()}`
     if (seen.has(key)) continue
     seen.add(key)
     out.push(np)
@@ -48,59 +36,39 @@ const dedupPlayers = (arr) => {
   return out
 }
 
-// 候选球员
-const candidates = ref({
+const lineups = ref({
   teamA: [],
   teamB: []
 })
 
-const addCandidate = (team, candidate) => {
-  const np = normalizeIn(candidate)
-  const key = normalizeKey(np)
-  const exists = lineups.value[team].some(p => normalizeKey(p) === key)
-  if (exists) return
-  np.isStarting = true
-  np.persisted = false
-  lineups.value[team].push(np)
-}
+// 监听 eventInfo 变化以更新比分与候选
+watch(() => props.eventInfo, (newVal) => {
+  if (newVal && newVal.currentData && newVal.currentData.scores) {
+    scores.value = {
+      teamA: newVal.currentData.scores.teamA || 0,
+      teamB: newVal.currentData.scores.teamB || 0
+    }
+  }
+  if (newVal && newVal.currentData && newVal.currentData.lineups) {
+    const la = Array.isArray(newVal.currentData.lineups.teamA) ? newVal.currentData.lineups.teamA : []
+    const lb = Array.isArray(newVal.currentData.lineups.teamB) ? newVal.currentData.lineups.teamB : []
+    lineups.value.teamA = dedupPlayers(la).map(p => ({ ...p, persisted: true }))
+    lineups.value.teamB = dedupPlayers(lb).map(p => ({ ...p, persisted: true }))
+  }
+  if (newVal && Array.isArray(newVal.candidatesTeamA)) {
+    candidates.value.teamA = newVal.candidatesTeamA
+  }
+  if (newVal && Array.isArray(newVal.candidatesTeamB)) {
+    candidates.value.teamB = newVal.candidatesTeamB
+  }
+}, { deep: true, immediate: true })
 
+ 
 
 
 
 // 加载状态
 const isLoading = ref(true)
-
-// 服务端返回的总比分（作为无分节数据时的回退显示）
-const serverTotals = ref({ teamA: 0, teamB: 0 })
-const hasQuarterValues = computed(() => {
-  return quarterScores.value.some(q => (q.teamA > 0 || q.teamB > 0))
-})
-// 计算总比分（优先使用本地分节求和；若均为0则显示服务端总分）
-const totalScore = computed(() => {
-  const sumA = quarterScores.value.reduce((sum, quarter) => sum + quarter.teamA, 0)
-  const sumB = quarterScores.value.reduce((sum, quarter) => sum + quarter.teamB, 0)
-  if (hasQuarterValues.value) {
-    return { teamA: sumA, teamB: sumB }
-  }
-  return { teamA: serverTotals.value.teamA, teamB: serverTotals.value.teamB }
-})
-
-// 比赛结果
-const matchResult = ref(null)
-
-// 计算并设置比赛结果
-const setMatchResult = () => {
-  const scoreA = totalScore.value.teamA
-  const scoreB = totalScore.value.teamB
-  
-  if (scoreA > scoreB) {
-    matchResult.value = 'teamA'
-  } else if (scoreB > scoreA) {
-    matchResult.value = 'teamB'
-  } else {
-    matchResult.value = null
-  }
-}
 
 // 加载赛事数据
 const loadEventData = () => {
@@ -124,8 +92,19 @@ const addPlayer = (team) => {
   lineups.value[team].push(newPlayer)
 }
 
-// 移除球员（按索引）
-import { del } from '../utils/http'
+const addCandidate = (team, candidate) => {
+  const np = normalizeIn(candidate)
+  const key = np.id ? `id:${np.id}` : `ext:${np.name.trim().toLowerCase()}|${String(np.number).trim()}|${np.position.trim().toLowerCase()}`
+  const exists = lineups.value[team].some(p => {
+    const k = p.id ? `id:${p.id}` : `ext:${p.name.trim().toLowerCase()}|${String(p.number).trim()}|${p.position.trim().toLowerCase()}`
+    return k === key
+  })
+  if (exists) return
+  np.isStarting = true
+  np.persisted = false
+  lineups.value[team].push(np)
+}
+// 移除球员
 const removePlayer = async (team, index) => {
   const item = lineups.value[team][index]
   const isPersisted = !!item?.persisted
@@ -139,7 +118,13 @@ const removePlayer = async (team, index) => {
         position: String(item.position || '').trim(),
         number: String(item.number || '').trim(),
       }
-      if (body.studentId) {
+      // 如果有 studentId 则仅按 studentId 删除；否则按外部字段删除
+      if (!body.studentId) {
+        if (!body.name) {
+          alert('缺少球员姓名，无法删除')
+          return
+        }
+      } else {
         body.name = ''
         body.position = ''
         body.number = ''
@@ -155,66 +140,31 @@ const removePlayer = async (team, index) => {
       return
     }
   }
-  const arr = lineups.value[team]
-  if (Array.isArray(arr) && index >= 0 && index < arr.length) {
-    arr.splice(index, 1)
-  }
+  lineups.value[team].splice(index, 1)
 }
 
 
 
-// 更新单节比分
-const updateQuarterScore = (quarterIndex, team, increment) => {
-  quarterScores.value[quarterIndex][team] = Math.max(0, quarterScores.value[quarterIndex][team] + increment)
-  setMatchResult()
+// 更新比分
+const updateScore = (team, increment) => {
+  scores.value[team] = Math.max(0, scores.value[team] + increment)
 }
 
 
-
-
-
-// 监听 eventInfo 变化以更新显示（不覆盖本地分节比分）
-watch(() => props.eventInfo, (newVal) => {
-  if (newVal && newVal.currentData) {
-    if (newVal.currentData.scores) {
-      serverTotals.value.teamA = newVal.currentData.scores.teamA || 0
-      serverTotals.value.teamB = newVal.currentData.scores.teamB || 0
-    }
-    if (newVal.currentData.lineups) {
-      const teamA = Array.isArray(newVal.currentData.lineups.teamA) ? newVal.currentData.lineups.teamA : []
-      const teamB = Array.isArray(newVal.currentData.lineups.teamB) ? newVal.currentData.lineups.teamB : []
-      lineups.value = {
-        teamA: dedupPlayers(teamA).map(p => ({ ...p, persisted: true })),
-        teamB: dedupPlayers(teamB).map(p => ({ ...p, persisted: true }))
-      }
-    }
-    if (Array.isArray(newVal.candidatesTeamA)) {
-      candidates.value.teamA = newVal.candidatesTeamA
-    }
-    if (Array.isArray(newVal.candidatesTeamB)) {
-      candidates.value.teamB = newVal.candidatesTeamB
-    }
-  }
-}, { deep: true, immediate: true })
 
 // 定义获取当前数据的方法，供父组件调用
 defineExpose({
-  // 获取篮球赛事数据的方法
+  // 获取足球赛事数据的方法
   getBasketballData() {
     const payload = {
-      quarterScores: quarterScores.value,
       scores: {
-        teamA: totalScore.value.teamA,
-        teamB: totalScore.value.teamB
+        teamA: scores.value.teamA,
+        teamB: scores.value.teamB
       },
       sportType: 'basketball'
     }
     const hasLineups = lineups.value.teamA.length > 0 || lineups.value.teamB.length > 0
     if (hasLineups) {
-      const taRaw = Array.isArray(lineups.value.teamA) ? lineups.value.teamA : []
-      const tbRaw = Array.isArray(lineups.value.teamB) ? lineups.value.teamB : []
-      const ta = dedupPlayers(taRaw)
-      const tb = dedupPlayers(tbRaw)
       const normalize = (arr) =>
         arr.map((p) => ({
           id: String(p.id ?? ''),
@@ -224,8 +174,8 @@ defineExpose({
           position: p.position ?? ''
         }))
       payload.lineups = {
-        teamA: normalize(ta),
-        teamB: normalize(tb)
+        teamA: normalize(lineups.value.teamA),
+        teamB: normalize(lineups.value.teamB)
       }
     }
     return payload
@@ -259,64 +209,25 @@ onUnmounted(() => {
     
     <!-- 数据录入内容 -->
     <div v-else class="collection-content">
-      <!-- 单节比分 -->
+      <!-- 实时比分 -->
       <div class="form-section score-section">
-        <h2 class="section-title">比分统计</h2>
-        
-        <!-- 总比分 -->
-        <div class="total-score">
+        <h2 class="section-title">实时比分</h2>
+        <div class="score-display">
           <div class="team-info">
             <span class="team-name">{{ eventInfo.teamA }}</span>
-            <span class="score">{{ totalScore.teamA }}</span>
+            <div class="score-controls">
+              <button @click="updateScore('teamA', -1)" class="score-btn decrease">-</button>
+              <span class="score">{{ scores.teamA }}</span>
+              <button @click="updateScore('teamA', 1)" class="score-btn increase">+</button>
+            </div>
           </div>
           <span class="vs">:</span>
           <div class="team-info">
             <span class="team-name">{{ eventInfo.teamB }}</span>
-            <span class="score">{{ totalScore.teamB }}</span>
-          </div>
-        </div>
-        
-        <!-- 比赛结果 -->
-        <div class="match-result" v-if="matchResult">
-          <span class="result-label">比赛结果：</span>
-          <span class="result-winner">{{ matchResult === 'teamA' ? eventInfo.teamA : eventInfo.teamB }} 胜</span>
-        </div>
-        <div class="match-result" v-else-if="totalScore.teamA > 0 || totalScore.teamB > 0">
-          <span class="result-label">比赛结果：</span>
-          <span class="result-draw">待定</span>
-        </div>
-        
-        <!-- 单节比分 -->
-        <div class="quarter-scores">
-          <div 
-            v-for="(quarter, index) in quarterScores" 
-            :key="quarter.quarter" 
-            class="quarter-score"
-          >
-            <div class="quarter-label">第{{ quarter.quarter }}节</div>
-            <div class="quarter-controls">
-              <div class="team-quarter-score">
-                <button 
-                  @click="updateQuarterScore(index, 'teamA', -1)" 
-                  class="score-btn decrease"
-                >-</button>
-                <span class="quarter-score-value">{{ quarter.teamA }}</span>
-                <button 
-                  @click="updateQuarterScore(index, 'teamA', 1)" 
-                  class="score-btn increase"
-                >+</button>
-              </div>
-              <div class="team-quarter-score">
-                <button 
-                  @click="updateQuarterScore(index, 'teamB', -1)" 
-                  class="score-btn decrease"
-                >-</button>
-                <span class="quarter-score-value">{{ quarter.teamB }}</span>
-                <button 
-                  @click="updateQuarterScore(index, 'teamB', 1)" 
-                  class="score-btn increase"
-                >+</button>
-              </div>
+            <div class="score-controls">
+              <button @click="updateScore('teamB', -1)" class="score-btn decrease">-</button>
+              <span class="score">{{ scores.teamB }}</span>
+              <button @click="updateScore('teamB', 1)" class="score-btn increase">+</button>
             </div>
           </div>
         </div>
@@ -355,10 +266,10 @@ onUnmounted(() => {
         </div>
         
         <!-- 主队阵容 -->
-      <div class="team-lineup">
+        <div class="team-lineup">
           <h3 class="team-title">{{ eventInfo.teamA }}</h3>
           <div class="player-list">
-            <div v-for="(player, index) in lineups.teamA" :key="normalizeKey(player) + '#' + index" class="player-item">
+            <div v-for="(player, index) in lineups.teamA" :key="index" class="player-item">
               <input 
                 v-model="player.name"
                 type="text" 
@@ -409,7 +320,7 @@ onUnmounted(() => {
         <div class="team-lineup">
           <h3 class="team-title">{{ eventInfo.teamB }}</h3>
           <div class="player-list">
-            <div v-for="(player, index) in lineups.teamB" :key="normalizeKey(player) + '#' + index" class="player-item">
+            <div v-for="(player, index) in lineups.teamB" :key="index" class="player-item">
               <input 
                 v-model="player.name"
                 type="text" 
@@ -451,7 +362,7 @@ onUnmounted(() => {
               </button>
             </div>
             <button @click="addPlayer('teamB')" class="add-player-btn">
-              + 添加替补
+              + 添加选手
             </button>
           </div>
         </div>
@@ -468,11 +379,12 @@ onUnmounted(() => {
 
 <style scoped>
 .basketball-data-collection {
-  min-height: 100vh;
+  /* min-height: 100vh; 由父组件控制高度 */
   background-color: #f5f5f5;
   display: flex;
   flex-direction: column;
-  padding-bottom: 80px;
+  /* padding-bottom: 80px; 父组件已预留空间 */
+  height: 100%;
 }
 
 .loading-container {
@@ -528,41 +440,12 @@ onUnmounted(() => {
   text-align: center;
 }
 
-.match-result {
-  margin-top: 12px;
-  padding: 12px;
-  background-color: #f0f9ff;
-  border-radius: 6px;
-  display: inline-block;
-  font-size: 16px;
-}
-
-.result-label {
-  color: #666;
-  font-weight: 500;
-}
-
-.result-winner {
-  color: #1890ff;
-  font-weight: bold;
-  margin-left: 6px;
-}
-
-.result-draw {
-  color: #faad14;
-  font-weight: 500;
-  margin-left: 6px;
-}
-
-.total-score {
+.score-display {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 24px;
   padding: 20px 0;
-  margin-bottom: 20px;
-  background-color: #fafafa;
-  border-radius: 8px;
 }
 
 .team-info {
@@ -576,62 +459,21 @@ onUnmounted(() => {
   font-size: 16px;
   font-weight: 500;
   color: #333;
+  margin-bottom: 8px;
 }
 
-.score {
-  font-size: 36px;
-  font-weight: bold;
-  color: #1890ff;
-  min-width: 60px;
-}
-
-.vs {
-  font-size: 32px;
-  font-weight: bold;
-  color: #666;
-}
-
-.quarter-scores {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-}
-
-.quarter-score {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 16px;
-  background-color: #fafafa;
-  border-radius: 8px;
-}
-
-.quarter-label {
-  font-weight: 500;
-  color: #333;
-}
-
-.quarter-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-}
-
-.team-quarter-score {
+.score-controls {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  gap: 16px;
 }
 
 .score-btn {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border: none;
-  border-radius: 4px;
-  font-size: 16px;
+  border-radius: 50%;
+  font-size: 20px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -648,12 +490,18 @@ onUnmounted(() => {
   color: white;
 }
 
-.quarter-score-value {
-  font-size: 18px;
-  font-weight: 500;
+.score {
+  font-size: 32px;
+  font-weight: bold;
   color: #333;
-  min-width: 30px;
+  min-width: 50px;
   text-align: center;
+}
+
+.vs {
+  font-size: 28px;
+  font-weight: bold;
+  color: #666;
 }
 
 /* 阵容样式 */
@@ -764,18 +612,82 @@ onUnmounted(() => {
 
 @media (max-width: 768px) {
   .player-item {
-    flex-direction: column;
-    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 12px;
+    background-color: #fff;
+    border: 1px solid #f0f0f0;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    margin-bottom: 8px;
+    align-items: center;
   }
+  
+  /* Name: Full width */
+  .player-item .player-input:nth-child(1) {
+    grid-column: 1 / -1;
+  }
+  
+  /* ID: Full width */
+  .player-item .player-input:nth-child(2) {
+    grid-column: 1 / -1;
+  }
+  
+  /* Number: Left */
+  .player-item .player-input:nth-child(3) {
+    grid-column: 1 / 2;
+  }
+  
+  /* Position: Right */
+  .player-item .player-input:nth-child(4) {
+    grid-column: 2 / 3;
+  }
+
   .checkbox-label {
+    grid-column: 1 / 2;
     margin-left: 0;
-    align-self: flex-start;
+    align-self: center;
+    justify-self: start;
   }
+  
   .remove-btn {
-    align-self: flex-start;
+    grid-column: 2 / 3;
+    align-self: center;
+    justify-self: end;
+    width: auto;
+    margin-top: 0;
   }
 }
 
+/* 事件样式 */
+.form-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.form-group {
+  flex: 1;
+  min-width: 150px;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.form-control {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+}
 
 .add-event-btn {
   padding: 8px 16px;
@@ -839,19 +751,19 @@ onUnmounted(() => {
   color: white;
 }
 
-.event-type.score {
+.event-type.goal {
   background-color: #52c41a;
 }
 
-.event-type.foul {
+.event-type.red_card {
   background-color: #f5222d;
 }
 
-.event-type.timeout {
-  background-color: #1890ff;
+.event-type.yellow_card {
+  background-color: #faad14;
 }
 
-.event-type.substitution {
+.event-type.penalty {
   background-color: #722ed1;
 }
 
@@ -870,27 +782,27 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-/* 球队数据样式 */
-.stats-table-container {
+/* 排行榜样式 */
+.ranking-table-container {
   max-height: 400px;
   overflow-y: auto;
   margin-bottom: 16px;
 }
 
-.stats-table {
+.ranking-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
 }
 
-.stats-table th,
-.stats-table td {
+.ranking-table th,
+.ranking-table td {
   padding: 12px 8px;
   text-align: center;
   border-bottom: 1px solid #f0f0f0;
 }
 
-.stats-table th {
+.ranking-table th {
   background-color: #fafafa;
   font-weight: 500;
   color: #333;
@@ -911,7 +823,16 @@ onUnmounted(() => {
   max-width: 60px;
 }
 
-.remove-stat-btn {
+.goal-diff {
+  font-weight: 500;
+}
+
+.points {
+  font-weight: bold;
+  color: #1890ff;
+}
+
+.remove-ranking-btn {
   padding: 4px 8px;
   background-color: #f5f5f5;
   color: #f5222d;
@@ -921,7 +842,7 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.add-stat-btn {
+.add-ranking-btn {
   padding: 8px 16px;
   background-color: #52c41a;
   color: white;
@@ -942,30 +863,36 @@ onUnmounted(() => {
     padding: 16px;
   }
   
-  .total-score {
-    flex-direction: column;
-    gap: 16px;
-  }
-  
-  .team-score {
+  .score-display {
     flex-direction: row;
-    gap: 16px;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
   }
   
-  .quarter-scores {
-    grid-template-columns: 1fr;
+  .team-info {
+    min-width: auto;
+    flex: 1;
+  }
+  
+  .score-controls {
     gap: 8px;
   }
   
-  .quarter-score {
-    flex-direction: row;
-    justify-content: space-between;
-    padding: 12px;
+  .score-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 16px;
   }
   
-  .quarter-controls {
-    flex-direction: row;
-    gap: 16px;
+  .score {
+    font-size: 24px;
+    min-width: 30px;
+  }
+  
+  .vs {
+    font-size: 20px;
+    margin: 0 4px;
   }
   
   .form-row {
@@ -985,24 +912,18 @@ onUnmounted(() => {
     flex-wrap: wrap;
   }
   
-  .stats-table {
+  .ranking-table {
     font-size: 12px;
   }
   
-  .stats-table th,
-  .stats-table td {
+  .ranking-table th,
+  .ranking-table td {
     padding: 8px 4px;
   }
   
   .table-input.small {
     max-width: 40px;
     padding: 4px;
-  }
-  
-  .match-result {
-    margin-top: 12px;
-    padding: 10px;
-    font-size: 14px;
   }
 }
 </style>

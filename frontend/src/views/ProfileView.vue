@@ -3,7 +3,6 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { get, post } from '@/utils/http'
 import { useAuthStore } from '@/stores/auth'
-import MatchHeader from '../components/MatchHeader.vue'
 import TeamManagementModal from '../components/TeamManagementModal.vue'
 import TeamChat from '../components/TeamChat.vue'
 
@@ -28,34 +27,36 @@ const handleFileChange = async (event) => {
     return
   }
   
-  // 验证文件大小 (例如限制为 2MB)
-  if (file.size > 2 * 1024 * 1024) {
-    showToast('图片大小不能超过 2MB', 'error')
+  // 验证文件大小 (例如限制为 10MB)
+  if (file.size > 10 * 1024 * 1024) {
+    showToast('图片大小不能超过 10MB', 'error')
     return
   }
 
-  // 这里应该上传文件到服务器
-  // 由于目前后端没有文件上传接口，我们暂时用 FileReader 读取并显示本地预览
-  // 实际项目中应替换为真实的上传逻辑
+  // 预览
   const reader = new FileReader()
   reader.onload = (e) => {
     userInfo.avatar = e.target.result
-    // 可以在这里调用更新头像的 API
-    // updateAvatar(e.target.result) 
-    showToast('头像修改预览成功 (暂未保存到服务器)')
   }
   reader.readAsDataURL(file)
-}
 
-// 赛事信息（仅用于头部显示）
-const eventInfo = ref({
-  id: '',
-  name: '个人中心',
-  teamA: '',
-  teamB: '',
-  status: '',
-  collectorName: '采集员姓名'
-})
+  // 上传文件到服务器
+  const formData = new FormData()
+  formData.append('avatar', file)
+
+  try {
+    const res = await post(`/user/avatar/${userInfo.studentId}`, formData)
+    if (res.code === 200 && res.data) {
+      userInfo.avatar = res.data.avatar_url ? `http://localhost:8080${res.data.avatar_url}` : ''
+      showToast('头像更新成功')
+    } else {
+      showToast(res.message || res.msg || '头像更新失败', 'error')
+    }
+  } catch (err) {
+    console.error('Upload avatar error:', err)
+    showToast('头像上传失败，请重试', 'error')
+  }
+}
 
 // 用户信息
 const userInfo = reactive({
@@ -112,8 +113,55 @@ const uiState = reactive({
   showNewPassword: false,
   showConfirmPassword: false,
   showLogoutModal: false,
-  showCollectorApplyModal: false
+  showCollectorApplyModal: false,
+  isEditingName: false
 })
+
+// 修改姓名表单
+const editNameForm = reactive({
+  name: ''
+})
+
+const handleEditName = () => {
+  console.log('handleEditName called')
+  editNameForm.name = userInfo.name
+  uiState.isEditingName = true
+}
+
+const cancelEditName = () => {
+  uiState.isEditingName = false
+  editNameForm.name = ''
+}
+
+const saveName = async () => {
+  if (!editNameForm.name.trim()) {
+    showToast('姓名不能为空', 'error')
+    return
+  }
+  
+  if (editNameForm.name === userInfo.name) {
+    uiState.isEditingName = false
+    return
+  }
+
+  try {
+    const res = await post('/user/update-name', {
+      student_id: authStore.studentId,
+      name: editNameForm.name
+    })
+    
+    if (res.code === 200) {
+      showToast('姓名修改成功')
+      userInfo.name = editNameForm.name
+      uiState.isEditingName = false
+    } else {
+      showToast(res.msg || '修改失败', 'error')
+    }
+  } catch (err) {
+    console.error('Update name error:', err)
+    showToast('请求失败，请稍后重试', 'error')
+  }
+}
 
 // 运动员申请表单
 const athleteForm = reactive({
@@ -132,8 +180,6 @@ const createTeamForm = reactive({
 })
 
 const teamList = ref([])
-const sportsList = ref([]) // 需要获取运动列表，或者暂时硬编码
-
 // 队伍管理弹窗状态
 const showTeamManagementModal = ref(false)
 const currentManagementTeam = ref(null)
@@ -275,8 +321,15 @@ const getTeamManagementRole = (team) => {
 }
 
 // 队伍更新回调
-const handleTeamUpdated = () => {
-  fetchMyTeams()
+const handleTeamUpdated = async () => {
+  await fetchMyTeams()
+  // Update currentManagementTeam to point to the new object so avatarUrl updates
+  if (currentManagementTeam.value) {
+     const newTeam = myTeams.value.find(t => (t.team_id || t.id) === (currentManagementTeam.value.team_id || currentManagementTeam.value.id))
+     if (newTeam) {
+        currentManagementTeam.value = newTeam
+     }
+  }
 }
 
 // 加载状态
@@ -298,7 +351,7 @@ const menuItems = computed(() => {
       icon: '👤',
       items: [
         { label: '学号', value: userInfo.studentId },
-        { label: '所属部门', value: userInfo.department },
+        { label: '所属专业', value: userInfo.department },
         { label: '注册日期', value: userInfo.joinDate },
         { label: '当前角色', value: getRoleNames(userInfo.roles) }
       ]
@@ -406,7 +459,7 @@ const loadUserInfo = async () => {
       userInfo.name = data.name
       userInfo.studentId = data.student_id
       userInfo.department = data.college || '未设置'
-      userInfo.avatar = data.avatar_url
+      userInfo.avatar = data.avatar_url ? `http://localhost:8080${data.avatar_url}` : ''
       userInfo.role = data.role
       userInfo.roles = data.roles || (data.role ? [data.role] : ['student'])
       userInfo.applyStatus = data.apply_status || 'none'
@@ -438,6 +491,12 @@ const loadUserInfo = async () => {
     }
   } catch (error) {
     console.error('Load profile error:', error)
+    if (error.status === 404) {
+      showToast('用户信息不存在，请重新登录', 'error')
+      authStore.clearAuth()
+      router.push('/login')
+      return
+    }
     showToast('加载失败，请重试', 'error')
   } finally {
     isLoading.value = false
@@ -562,7 +621,10 @@ const fetchMyTeams = async () => {
   try {
     const res = await get(`/teams/my?student_id=${authStore.studentId}`)
     if (res.code === 200) {
-      myTeams.value = res.data || []
+      myTeams.value = (res.data || []).map(t => ({
+        ...t,
+        avatar_url: t.avatar_url ? `http://localhost:8080${t.avatar_url}` : ''
+      }))
     }
   } catch (err) {
     console.error('Fetch my teams error:', err)
@@ -704,8 +766,7 @@ const handleApplyAthleteSubmit = async () => {
     '1': 'football',
     '2': 'basketball',
     '3': 'badminton',
-    '4': 'volleyball',
-    '5': 'water'
+    '4': 'volleyball'
   }
 
   try {
@@ -848,13 +909,41 @@ onMounted(() => {
         </div>
         
         <div class="user-info">
-          <h2 class="user-name">{{ userInfo.name }}</h2>
+          <div v-if="uiState.isEditingName" class="edit-name-container">
+            <input 
+              v-model="editNameForm.name" 
+              class="edit-name-input"
+              @keyup.enter="saveName"
+              @keyup.esc="cancelEditName"
+              ref="nameInput"
+              placeholder="请输入姓名"
+            >
+            <div class="edit-name-actions">
+              <button @click="saveName" class="btn-icon save-btn" title="保存">✓</button>
+              <button @click="cancelEditName" class="btn-icon cancel-btn" title="取消">✕</button>
+            </div>
+          </div>
+          <div v-else>
+            <h2 class="user-name">{{ userInfo.name }}</h2>
+          </div>
           <p class="user-username">{{ userInfo.studentId }}</p>
         </div>
+        
+        <!-- 绝对定位的修改按钮，移出 user-info 以避免布局干扰 -->
+         <button 
+           v-if="!uiState.isEditingName"
+           class="edit-name-btn-fixed" 
+           @click.stop="handleEditName" 
+           title="修改姓名" 
+           type="button"
+         >
+           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+           修改名字
+         </button>
       </div>
       
       <!-- 数据统计 (仅采集员可见) -->
-      <div v-if="userInfo.role === 'collector' || userInfo.role === 'admin'" class="stats-container">
+      <!-- <div v-if="userInfo.role === 'collector' || userInfo.role === 'admin'" class="stats-container">
         <div 
           v-for="stat in stats" 
           :key="stat.label"
@@ -866,7 +955,7 @@ onMounted(() => {
             <div class="stat-label">{{ stat.label }}</div>
           </div>
         </div>
-      </div>
+      </div> -->
 
       <!-- 我的队伍 (仅运动员可见) -->
       <div v-if="myTeams.length > 0" class="my-teams-container">
@@ -884,12 +973,12 @@ onMounted(() => {
               <div class="team-name">{{ team.team_name }}</div>
               <div class="team-college">{{ team.college }}</div>
               <div class="team-actions">
-                <button 
+                <!-- <button 
                   class="chat-team-btn" 
                   @click.stop="openTeamChat(team)"
                 >
                   队内聊天
-                </button>
+                </button> -->
                 <button 
                   v-if="canManageTeam(team)" 
                   class="manage-team-btn" 
@@ -917,7 +1006,7 @@ onMounted(() => {
       </div>
 
       <!-- 我参加的比赛 (仅运动员可见) -->
-      <div v-if="userInfo.roles.includes('athlete')" class="my-matches-container">
+      <!-- <div v-if="userInfo.roles.includes('athlete')" class="my-matches-container">
         <h3 class="section-title">我参加的比赛</h3>
         <div v-if="isLoadingMatches" class="loading-matches">
           <div class="loading-spinner"></div>
@@ -959,10 +1048,10 @@ onMounted(() => {
             </div>
           </div>
         </div>
-      </div>
+      </div> -->
 
       <!-- 可报名的比赛 (仅运动员可见) -->
-      <div v-if="userInfo.roles.includes('athlete')" class="available-matches-container">
+      <!-- <div v-if="userInfo.roles.includes('athlete')" class="available-matches-container">
         <h3 class="section-title">可报名的比赛</h3>
         <div v-if="isLoadingAvailableMatches" class="loading-matches">
           <div class="loading-spinner"></div>
@@ -1011,7 +1100,7 @@ onMounted(() => {
             </div>
           </div>
         </div>
-      </div>
+      </div> -->
       
       <!-- 菜单列表 -->
       <div class="menu-container">
@@ -1203,7 +1292,6 @@ onMounted(() => {
               <option value="2">篮球</option>
               <option value="3">羽毛球</option>
               <option value="4">排球</option>
-              <option value="5">水上运动</option>
             </select>
           </div>
           
@@ -1363,6 +1451,7 @@ onMounted(() => {
       v-model:visible="showTeamManagementModal"
       :team-id="currentManagementTeam.team_id || currentManagementTeam.id"
       :team-name="currentManagementTeam.team_name"
+      :avatar-url="currentManagementTeam.avatar_url"
       :current-user-role="getTeamManagementRole(currentManagementTeam)"
       @refresh="handleTeamUpdated"
     />
@@ -1513,6 +1602,7 @@ onMounted(() => {
   background-color: white;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  position: relative;
 }
 
 .avatar-container {
@@ -1577,6 +1667,89 @@ onMounted(() => {
   font-weight: 600;
   color: #333;
   margin: 0 0 8px 0;
+}
+
+.edit-name-btn-fixed {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  background-color: transparent;
+  border: 1px solid #d9d9d9;
+  border-radius: 20px;
+  color: #666;
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  white-space: nowrap;
+  z-index: 999;
+}
+
+.edit-name-btn-fixed:hover {
+  color: #1890ff;
+  border-color: #1890ff;
+  background-color: #e6f7ff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.edit-name-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.edit-name-input {
+  font-size: 18px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border: 1px solid #1890ff;
+  border-radius: 4px;
+  width: 200px;
+  outline: none;
+}
+
+.edit-name-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  background: white;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.save-btn {
+  color: #52c41a;
+  border-color: #b7eb8f;
+  background: #f6ffed;
+}
+
+.save-btn:hover {
+  background: #d9f7be;
+}
+
+.cancel-btn {
+  color: #ff4d4f;
+  border-color: #ffa39e;
+  background: #fff1f0;
+}
+
+.cancel-btn:hover {
+  background: #ffccc7;
 }
 
 .user-username {
@@ -1992,7 +2165,7 @@ onMounted(() => {
   width: 50px;
   height: 50px;
   border-radius: 50%;
-  overflow: hidden;
+  /* overflow: hidden; 移除此属性以允许徽章显示 */
   margin-bottom: 8px;
   background-color: #f0f0f0;
   display: flex;
@@ -2004,6 +2177,7 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: 50%; /* 确保图片是圆形的 */
 }
 
 .team-avatar-placeholder {
@@ -2016,6 +2190,7 @@ onMounted(() => {
   color: white;
   font-size: 20px;
   font-weight: bold;
+  border-radius: 50%; /* 确保占位符是圆形的 */
 }
 
 .team-info {
@@ -2354,6 +2529,102 @@ onMounted(() => {
   border: 1px solid #1890ff;
   background-color: #1890ff;
   color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #40a9ff;
+  border-color: #40a9ff;
+}
+
+.btn-primary:disabled {
+  background-color: #bae7ff;
+  border-color: #bae7ff;
+  cursor: not-allowed;
+}
+
+/* Name Edit Styles */
+.edit-name-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.edit-name-input {
+  font-size: 20px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border: 1px solid #1890ff;
+  border-radius: 4px;
+  width: 180px;
+  color: #333;
+}
+
+.edit-name-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+}
+
+.edit-name-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+
+.save-btn {
+  color: #52c41a;
+  border: 1px solid #b7eb8f;
+  background-color: #f6ffed;
+}
+
+.save-btn:hover {
+  background-color: #d9f7be;
+}
+
+.cancel-btn {
+  color: #ff4d4f;
+  border: 1px solid #ffa39e;
+  background-color: #fff1f0;
+}
+
+.cancel-btn:hover {
+  background-color: #ffccc7;
+}
+
+.edit-name-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  color: #999;
+  opacity: 0;
+  transition: all 0.2s;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.edit-name-btn:hover {
+  background-color: #f0f0f0;
+  color: #1890ff;
+}
+
+.user-name:hover .edit-name-btn {
+  opacity: 1;
 }
 
 .btn-primary:hover:not(:disabled) {

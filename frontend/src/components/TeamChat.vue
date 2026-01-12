@@ -427,6 +427,7 @@ const showCreateNotificationModal = ref(false)
 const showCreateLeaveModal = ref(false)
 const showVoteDetailModal = ref(false)
 const currentVoteDetail = ref(null)
+const currentLeaveRequest = ref(null)
 
 const voteForm = reactive({
   title: '',
@@ -548,7 +549,7 @@ const handleMessageClick = async (msg) => {
         } else {
           alert('获取投票详情失败: ' + (err.response?.data?.message || err.message || '网络错误'))
         }
-      } catch (fetchErr) {
+      } catch {
         alert('获取投票详情失败: ' + (err.response?.data?.message || err.message || '网络错误'))
       }
     }
@@ -1681,4 +1682,3 @@ onMounted(() => {
   color: #999;
 }
 </style>
-

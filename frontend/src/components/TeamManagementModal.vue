@@ -2,15 +2,24 @@
   <div v-if="visible" class="modal-overlay" @click.self="close">
     <div class="modal-content large-modal">
       <div class="modal-header">
-        <h3 v-if="!isEditingName">队伍管理: {{ teamName }}</h3>
-        <div v-else class="edit-name-container">
-          <input 
-            v-model="editNameValue" 
-            class="edit-name-input"
-            placeholder="输入新队伍名称"
-          />
-          <button class="action-btn save-btn small" @click="saveName">保存</button>
-          <button class="action-btn cancel-btn small" @click="cancelEditName">取消</button>
+        <div class="header-left">
+          <div class="team-avatar-wrapper">
+            <img :src="avatarSrc" class="team-avatar" alt="Team Avatar" @error="handleImageError" />
+            <label v-if="canManage" class="edit-avatar-label" title="修改头像">
+                <input type="file" accept="image/*" @change="handleAvatarChange" style="display: none;">
+                <span class="edit-icon">📷</span>
+            </label>
+          </div>
+          <h3 v-if="!isEditingName">队伍管理: {{ teamName }}</h3>
+          <div v-else class="edit-name-container">
+            <input 
+              v-model="editNameValue" 
+              class="edit-name-input"
+              placeholder="输入新队伍名称"
+            />
+            <button class="action-btn save-btn small" @click="saveName">保存</button>
+            <button class="action-btn cancel-btn small" @click="cancelEditName">取消</button>
+          </div>
         </div>
         
         <div class="header-actions">
@@ -40,13 +49,13 @@
               </thead>
               <tbody>
                 <tr v-for="member in pendingMembers" :key="member.team_member_id">
-                  <td>{{ member.student_id }}</td>
-                  <td>{{ member.name }}</td>
-                  <td>{{ member.college }}</td>
-                  <td>{{ member.sport_type }}</td>
-                  <td>{{ member.jersey_number || '-' }}</td>
-                  <td>{{ new Date(member.join_date).toLocaleDateString() }}</td>
-                  <td class="actions-cell">
+                  <td data-label="学号">{{ member.student_id }}</td>
+                  <td data-label="姓名">{{ member.name }}</td>
+                  <td data-label="学院">{{ member.college }}</td>
+                  <td data-label="项目">{{ member.sport_type }}</td>
+                  <td data-label="号码">{{ member.jersey_number || '-' }}</td>
+                  <td data-label="申请时间">{{ new Date(member.join_date).toLocaleDateString() }}</td>
+                  <td data-label="操作" class="actions-cell">
                     <button class="action-btn approve-btn small" @click="approveMember(member)">同意</button>
                     <button class="action-btn reject-btn small" @click="rejectMember(member)">拒绝</button>
                   </td>
@@ -74,16 +83,16 @@
             </thead>
             <tbody>
               <tr v-for="member in members" :key="member.team_member_id">
-                <td>{{ member.student_id }}</td>
-                <td>
+                <td data-label="学号">{{ member.student_id }}</td>
+                <td data-label="姓名">
                   {{ member.name }}
                   <span v-if="member.is_captain" class="captain-tag">队长</span>
                 </td>
-                <td>{{ member.college }}</td>
-                <td>{{ member.sport_type }}</td>
-                <td>{{ member.jersey_number || '-' }}</td>
-                <td>{{ new Date(member.join_date).toLocaleDateString() }}</td>
-                <td v-if="canManage">
+                <td data-label="学院">{{ member.college }}</td>
+                <td data-label="项目">{{ member.sport_type }}</td>
+                <td data-label="号码">{{ member.jersey_number || '-' }}</td>
+                <td data-label="加入时间">{{ new Date(member.join_date).toLocaleDateString() }}</td>
+                <td v-if="canManage" data-label="操作">
                   <button class="action-btn delete-btn small" @click="removeMember(member)">移除</button>
                 </td>
               </tr>
@@ -107,10 +116,103 @@ const props = defineProps({
   visible: Boolean,
   teamId: Number,
   teamName: String,
-  currentUserRole: String // 'admin', 'captain' or 'member'
+  currentUserRole: String, // 'admin', 'captain' or 'member'
+  avatarUrl: String
 })
 
 const emit = defineEmits(['update:visible', 'refresh'])
+
+const timestamp = ref(Date.now())
+const imageLoadError = ref(false)
+const localAvatarUrl = ref('')
+
+const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iI2UwZTBlMCIvPgogIDxwYXRoIGQ9Ik01MCAyMGExNSAxNSAwIDEgMCAwIDMwIDE1IDE1IDAgMCAwIDAtMzB6bTAgMzVjLTIwIDAtMzUgMTAtMzUgMjV2NWg3MHYtNWMwLTE1LTE1LTI1LTM1LTI1eiIgZmlsbD0iIzc1NzU3NSIvPgo8L3N2Zz4='
+
+const avatarSrc = computed(() => {
+  const currentUrl = localAvatarUrl.value || props.avatarUrl
+  // Only show default avatar if we really don't have a URL
+  if (imageLoadError.value || !currentUrl) return defaultAvatar
+  
+  // If it's a data URL (Base64), return it directly
+  if (currentUrl.startsWith('data:')) return currentUrl
+
+  // Handle standard URLs
+  let finalUrl = currentUrl
+  if (finalUrl.startsWith('http')) {
+     // It's an absolute URL, use it as is
+  } else {
+     // It's a relative path.
+     // To align with other components (StudentEventList.vue) and ensure reliability,
+     // we prepend the backend origin directly.
+     // This avoids potential issues with Vite proxy or relative path resolution in some contexts.
+     const normalizedPath = finalUrl.startsWith('/') ? finalUrl : `/${finalUrl}`
+     finalUrl = `http://localhost:8080${normalizedPath}`
+  }
+  
+  // Append timestamp to bust cache
+  return `${finalUrl}?t=${timestamp.value}`
+})
+
+const handleImageError = (e) => {
+  // Only set error if we are not trying to load the default avatar
+  if (avatarSrc.value !== defaultAvatar) {
+    console.warn('Avatar load failed for URL:', avatarSrc.value)
+    imageLoadError.value = true
+  }
+}
+
+const handleAvatarChange = async (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+
+  // Validate size (10MB)
+  if (file.size > 10 * 1024 * 1024) {
+    alert('文件大小不能超过 10MB')
+    return
+  }
+  
+  const formData = new FormData()
+  formData.append('avatar', file)
+  formData.append('team_id', props.teamId)
+  
+  try {
+    const res = await http.post('/teams/avatar', formData)
+    alert('头像更新成功')
+    
+    if (res && res.avatar_url) {
+      localAvatarUrl.value = res.avatar_url
+      imageLoadError.value = false // Reset error state immediately
+    }
+    
+    timestamp.value = Date.now() // Force image refresh
+    emit('refresh')
+  } catch (e) {
+    alert('头像更新失败: ' + (e.response?.data?.message || e.message))
+  }
+}
+
+// Watch for prop changes to reset local state and error
+watch(() => props.avatarUrl, (newVal) => {
+  if (newVal) {
+     // If parent updates (e.g. after refresh), use that and clear local override
+     // BUT only if local override matches or we want to sync
+     if (localAvatarUrl.value && localAvatarUrl.value !== newVal) {
+        // If we have a local value that is different, it might be the one we just uploaded.
+        // However, usually parent refresh should be the source of truth.
+        // Let's clear local override to trust the server source of truth.
+        localAvatarUrl.value = ''
+     }
+     imageLoadError.value = false
+     timestamp.value = Date.now()
+  }
+})
+
+// Reset local state when switching teams
+watch(() => props.teamId, () => {
+  localAvatarUrl.value = ''
+  imageLoadError.value = false
+  timestamp.value = Date.now()
+})
 
 const members = ref([])
 const pendingMembers = ref([])
@@ -238,6 +340,10 @@ watch(() => props.visible, (newVal) => {
   }
 })
 
+watch(() => props.avatarUrl, () => {
+  imageLoadError.value = false
+})
+
 // 组件挂载时如果可见，立即获取数据
 onMounted(() => {
   if (props.visible) {
@@ -295,6 +401,49 @@ onMounted(() => {
   font-size: 1.25rem;
   color: #333;
   font-weight: 600;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+}
+
+.team-avatar-wrapper {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+
+.team-avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #eee;
+}
+
+.edit-avatar-label {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  background: white;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  z-index: 2;
+}
+
+.edit-avatar-label:hover {
+  background: #f0f0f0;
 }
 
 .header-actions {
@@ -518,5 +667,77 @@ onMounted(() => {
   font-size: 10px;
   border-radius: 10px;
   font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .modal-content.large-modal {
+    width: 95%;
+    max-height: 95vh;
+    border-radius: 12px;
+  }
+
+  .modal-body {
+    padding: 16px;
+  }
+
+  /* Table to Card Transformation */
+  .data-table thead {
+    display: none;
+  }
+
+  .data-table, .data-table tbody, .data-table tr, .data-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .data-table tr {
+    margin-bottom: 16px;
+    background: #fff;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+  }
+
+  .data-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    text-align: right;
+    border-bottom: 1px solid #f5f5f5;
+    font-size: 0.9rem;
+  }
+
+  .data-table td:last-child {
+    border-bottom: none;
+  }
+
+  .data-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #666;
+    text-align: left;
+    margin-right: 12px;
+    font-size: 0.85rem;
+  }
+
+  .actions-cell {
+    justify-content: flex-end;
+    padding-top: 12px !important;
+  }
+
+  /* Adjust other elements */
+  .modal-header {
+    padding: 16px;
+  }
+
+  .header-actions {
+    gap: 8px;
+  }
+  
+  .edit-name-input {
+    width: 140px;
+  }
 }
 </style>

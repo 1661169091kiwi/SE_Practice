@@ -26,11 +26,23 @@ func NewMatchService() *MatchService {
 }
 
 // ListAllMatches 获取所有比赛
-func (s *MatchService) ListAllMatches(view string) ([]model.Match, error) {
+func (s *MatchService) ListAllMatches(view string, studentID string) ([]model.Match, error) {
 	list, err := s.matchRepo.ListAllMatches()
 	if err != nil {
 		return nil, err
 	}
+
+	if studentID != "" {
+		eventSubs, matchSubs, err := s.matchRepo.GetSubscriptionMaps(studentID)
+		if err == nil {
+			for i := range list {
+				if eventSubs[list[i].EventID] || matchSubs[list[i].ID] {
+					list[i].IsSubscribed = true
+				}
+			}
+		}
+	}
+
 	for i := range list {
 		list[i].Status = s.computeAutoStatusForView(&list[i], view)
 	}
@@ -38,11 +50,23 @@ func (s *MatchService) ListAllMatches(view string) ([]model.Match, error) {
 }
 
 // ListMatchesByEvent 按赛事ID获取比赛列表
-func (s *MatchService) ListMatchesByEvent(eventID int64, view string) ([]model.Match, error) {
+func (s *MatchService) ListMatchesByEvent(eventID int64, view string, studentID string) ([]model.Match, error) {
 	list, err := s.matchRepo.ListMatchesByEvent(eventID)
 	if err != nil {
 		return nil, err
 	}
+
+	if studentID != "" {
+		eventSubs, matchSubs, err := s.matchRepo.GetSubscriptionMaps(studentID)
+		if err == nil {
+			for i := range list {
+				if eventSubs[list[i].EventID] || matchSubs[list[i].ID] {
+					list[i].IsSubscribed = true
+				}
+			}
+		}
+	}
+
 	for i := range list {
 		list[i].Status = s.computeAutoStatusForView(&list[i], view)
 	}
@@ -137,7 +161,7 @@ func (s *MatchService) JoinMatch(req *model.JoinMatchRequest) error {
 	if err != nil {
 		return err
 	}
-	
+
 	isTeamMember := false
 	var athleteID int64
 	for _, athlete := range athletes {
@@ -214,6 +238,25 @@ func (s *MatchService) CreateMatch(req *model.CreateMatchRequest) (*model.Match,
 		return nil, errors.New("team b is not approved")
 	}
 
+	teamCount, err := s.eventRepo.CountEventTeams(req.EventID)
+	if err != nil {
+		return nil, err
+	}
+	if teamCount == 0 {
+		return nil, errors.New("event teams not configured")
+	}
+	inA, err := s.eventRepo.IsTeamInEvent(req.EventID, req.TeamAID)
+	if err != nil {
+		return nil, err
+	}
+	inB, err := s.eventRepo.IsTeamInEvent(req.EventID, req.TeamBID)
+	if err != nil {
+		return nil, err
+	}
+	if !inA || !inB {
+		return nil, errors.New("team is not in event")
+	}
+
 	// 构建比赛模型
 	match := &model.Match{
 		EventID: req.EventID,
@@ -256,23 +299,30 @@ func (s *MatchService) GetMatchDetail(id int64) (*model.MatchDetailResponse, err
 
 	status := s.computeAutoStatusForView(match, "user")
 
+	var teamABrief, teamBBrief model.TeamBrief
+	if teamA != nil {
+		teamABrief = model.TeamBrief{ID: teamA.ID, Name: teamA.TeamName, Avatar: teamA.AvatarURL}
+	} else {
+		teamABrief = model.TeamBrief{ID: 0, Name: "TBD", Avatar: ""}
+	}
+
+	if teamB != nil {
+		teamBBrief = model.TeamBrief{ID: teamB.ID, Name: teamB.TeamName, Avatar: teamB.AvatarURL}
+	} else {
+		teamBBrief = model.TeamBrief{ID: 0, Name: "TBD", Avatar: ""}
+	}
+
 	return &model.MatchDetailResponse{
 		MatchID:   match.ID,
 		EventID:   match.EventID,
 		MatchName: match.Name,
 		Round:     match.Round,
 		MatchTime: match.Time,
-		TeamA: model.TeamBrief{
-			ID:   teamA.ID,
-			Name: teamA.TeamName,
-		},
-		TeamB: model.TeamBrief{
-			ID:   teamB.ID,
-			Name: teamB.TeamName,
-		},
-		ScoreA: match.ScoreA,
-		ScoreB: match.ScoreB,
-		Status: status,
+		TeamA:     teamABrief,
+		TeamB:     teamBBrief,
+		ScoreA:    match.ScoreA,
+		ScoreB:    match.ScoreB,
+		Status:    status,
 		Collectors: []model.UserBrief{
 			// 实际项目中需要查询collectors表获取采集员信息
 			{ID: match.Collector1ID},
@@ -329,9 +379,34 @@ func (s *MatchService) UpdateMatch(id int64, req *model.CreateMatchRequest) erro
 	if err != nil || teamA == nil {
 		return errors.New("team a not found")
 	}
+	if !teamA.IsApproved {
+		return errors.New("team a is not approved")
+	}
 	teamB, err := s.teamRepo.GetTeamByID(req.TeamBID)
 	if err != nil || teamB == nil {
 		return errors.New("team b not found")
+	}
+	if !teamB.IsApproved {
+		return errors.New("team b is not approved")
+	}
+
+	teamCount, err := s.eventRepo.CountEventTeams(req.EventID)
+	if err != nil {
+		return err
+	}
+	if teamCount == 0 {
+		return errors.New("event teams not configured")
+	}
+	inA, err := s.eventRepo.IsTeamInEvent(req.EventID, req.TeamAID)
+	if err != nil {
+		return err
+	}
+	inB, err := s.eventRepo.IsTeamInEvent(req.EventID, req.TeamBID)
+	if err != nil {
+		return err
+	}
+	if !inA || !inB {
+		return errors.New("team is not in event")
 	}
 
 	// 更新字段

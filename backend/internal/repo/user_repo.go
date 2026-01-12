@@ -67,19 +67,19 @@ func (r *UserRepo) UpdatePassword(studentID string, newHashedPassword string) er
 
 // CreateTeam 创建队伍
 func (r *UserRepo) CreateTeam(team *model.Team) (int64, error) {
-	query := `INSERT INTO teams (team_name, sport_id, college, team_type, avatar_url, description, created_by) 
-	          VALUES (?, ?, ?, ?, ?, ?, ?)`
-	return db.Insert(query, team.TeamName, team.SportID, team.College, team.TeamType, team.AvatarURL, team.Description, team.CreatedBy)
+	query := `INSERT INTO teams (team_name, sport_id, college, team_type, avatar_url, description, created_by, is_approved) 
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	return db.Insert(query, team.TeamName, team.SportID, team.College, team.TeamType, team.AvatarURL, team.Description, team.CreatedBy, team.IsApproved)
 }
 
 // GetTeamByID 获取队伍信息
 func (r *UserRepo) GetTeamByID(teamID int64) (*model.Team, error) {
-	query := `SELECT team_id, team_name, sport_id, college, team_type, COALESCE(avatar_url, ''), description, created_by, created_at 
+	query := `SELECT team_id, team_name, sport_id, college, team_type, COALESCE(avatar_url, ''), description, created_by, created_at, is_approved 
 	          FROM teams WHERE team_id = ?`
 	var team model.Team
 	err := db.QueryRow(query, teamID).Scan(
 		&team.ID, &team.TeamName, &team.SportID, &team.College,
-		&team.TeamType, &team.AvatarURL, &team.Description, &team.CreatedBy, &team.CreatedAt,
+		&team.TeamType, &team.AvatarURL, &team.Description, &team.CreatedBy, &team.CreatedAt, &team.IsApproved,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil

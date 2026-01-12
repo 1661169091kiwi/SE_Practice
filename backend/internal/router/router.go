@@ -14,6 +14,10 @@ func New() http.Handler {
 	// health
 	mux.HandleFunc("/api/health", handler.Health)
 
+	// static files
+	fs := http.FileServer(http.Dir("./uploads"))
+	mux.Handle("/uploads/", http.StripPrefix("/uploads/", fs))
+
 	// auth
 	mux.HandleFunc("/api/register", handler.Register)
 	mux.HandleFunc("/api/login", handler.Login)
@@ -21,6 +25,7 @@ func New() http.Handler {
 	// 用户资料
 	mux.HandleFunc("/api/user/profile/", handler.GetUserProfile)                                                        // expects /api/user/profile/{student_id}
 	mux.HandleFunc("/api/user/avatar/", handler.UpdateAvatar)                                                           // 更新用户头像 /api/user/avatar/{student_id}
+	mux.HandleFunc("/api/user/update-name", handler.UpdateName)                                                         // 更新用户姓名
 	mux.HandleFunc("/api/user/college", handler.UpdateCollege)                                                          // 更新用户学院信息
 	mux.HandleFunc("/api/user/apply-collector", handler.ApplyCollector)                                                 // 申请成为采集员
 	mux.HandleFunc("/api/user/apply-athlete", handler.ApplyAthlete)                                                     // 申请成为运动员
@@ -36,6 +41,7 @@ func New() http.Handler {
 	mux.Handle("/api/events/create", middleware.RoleAuth("admin")(http.HandlerFunc(handler.CreateEvent)))
 	mux.HandleFunc("/api/events/", handler.GetEventDetail)
 	mux.HandleFunc("/api/events/list", handler.ListEvents)
+	mux.HandleFunc("/api/events/update-status", handler.UpdateEventStatus) // post
 	mux.Handle("/api/events/delete", middleware.RoleAuth("admin")(http.HandlerFunc(handler.DeleteEvent)))
 
 	// teams
@@ -52,6 +58,7 @@ func New() http.Handler {
 	// RemoveTeamMember now supports both admin and captain (handled inside via claims)
 	mux.Handle("/api/teams/remove-member", middleware.Auth(http.HandlerFunc(handler.RemoveTeamMember)))
 	mux.Handle("/api/teams/update-name", middleware.Auth(http.HandlerFunc(handler.UpdateTeamName)))
+	mux.Handle("/api/teams/avatar", middleware.Auth(http.HandlerFunc(handler.UpdateTeamAvatar))) // 更新队伍头像
 
 	// matches
 	mux.HandleFunc("/api/matches", handler.Matches)
@@ -67,12 +74,12 @@ func New() http.Handler {
 	// 运动员报名参加比赛
 	mux.HandleFunc("/api/athlete/join-match", handler.JoinMatch)
 	// 运动员相关功能
-	mux.Handle("/api/athlete/info", middleware.Auth(http.HandlerFunc(handler.GetMyAthleteInfo)))                    // 获取我的运动员信息
-	mux.Handle("/api/athlete/info/team", middleware.Auth(http.HandlerFunc(handler.GetMyAthleteInfoByTeam)))        // 获取我在指定队伍中的信息
-	mux.Handle("/api/athlete/update", middleware.Auth(http.HandlerFunc(handler.UpdateMyAthleteInfo)))             // 更新我的运动员信息
-	mux.Handle("/api/athlete/leave-team", middleware.Auth(http.HandlerFunc(handler.LeaveTeam)))                     // 退出队伍
-	mux.Handle("/api/athlete/team-members", middleware.Auth(http.HandlerFunc(handler.GetTeamMembersForAthlete)))   // 查看队伍成员
-	mux.Handle("/api/athlete/check-captain", middleware.Auth(http.HandlerFunc(handler.CheckIfCaptain)))             // 检查是否是队长
+	mux.Handle("/api/athlete/info", middleware.Auth(http.HandlerFunc(handler.GetMyAthleteInfo)))                 // 获取我的运动员信息
+	mux.Handle("/api/athlete/info/team", middleware.Auth(http.HandlerFunc(handler.GetMyAthleteInfoByTeam)))      // 获取我在指定队伍中的信息
+	mux.Handle("/api/athlete/update", middleware.Auth(http.HandlerFunc(handler.UpdateMyAthleteInfo)))            // 更新我的运动员信息
+	mux.Handle("/api/athlete/leave-team", middleware.Auth(http.HandlerFunc(handler.LeaveTeam)))                  // 退出队伍
+	mux.Handle("/api/athlete/team-members", middleware.Auth(http.HandlerFunc(handler.GetTeamMembersForAthlete))) // 查看队伍成员
+	mux.Handle("/api/athlete/check-captain", middleware.Auth(http.HandlerFunc(handler.CheckIfCaptain)))          // 检查是否是队长
 
 	// match data (积分榜等)
 	mux.HandleFunc("/api/match/data", handler.GetMatchData)
@@ -89,20 +96,29 @@ func New() http.Handler {
 	mux.Handle("/api/collector/", middleware.Auth(http.HandlerFunc(handler.CollectorEntry)))
 
 	// 队内聊天相关功能
-	mux.Handle("/api/team/chat/messages", middleware.Auth(http.HandlerFunc(handler.CreateMessage)))           // 创建消息
-	mux.Handle("/api/team/chat/messages/list", middleware.Auth(http.HandlerFunc(handler.GetTeamMessages)))     // 获取消息列表
-	mux.Handle("/api/team/chat/messages/read", middleware.Auth(http.HandlerFunc(handler.MarkMessageAsRead)))  // 标记已读
-	mux.Handle("/api/team/chat/messages/delete", middleware.Auth(http.HandlerFunc(handler.DeleteMessage)))     // 删除消息
-	mux.Handle("/api/team/chat/votes", middleware.Auth(http.HandlerFunc(handler.CreateVote)))                  // 创建投票
-	mux.Handle("/api/team/chat/votes/list", middleware.Auth(http.HandlerFunc(handler.GetTeamVotes)))          // 获取投票列表
-	mux.Handle("/api/team/chat/votes/by-message", middleware.Auth(http.HandlerFunc(handler.GetVoteByMessageID))) // 根据message_id获取投票
-	mux.Handle("/api/team/chat/votes/vote", middleware.Auth(http.HandlerFunc(handler.Vote)))                 // 投票
-	mux.Handle("/api/team/chat/notifications", middleware.Auth(http.HandlerFunc(handler.CreateNotification))) // 创建通知
-	mux.Handle("/api/team/chat/notifications/list", middleware.Auth(http.HandlerFunc(handler.GetTeamNotifications))) // 获取通知列表
-	mux.Handle("/api/team/chat/leave-requests", middleware.Auth(http.HandlerFunc(handler.CreateLeaveRequest))) // 创建请假申请
-	mux.Handle("/api/team/chat/leave-requests/list", middleware.Auth(http.HandlerFunc(handler.GetLeaveRequests))) // 获取请假申请列表
-	mux.Handle("/api/team/chat/leave-requests/review", middleware.Auth(http.HandlerFunc(handler.ReviewLeaveRequest))) // 审核请假申请
+	mux.Handle("/api/team/chat/messages", middleware.Auth(http.HandlerFunc(handler.CreateMessage)))                               // 创建消息
+	mux.Handle("/api/team/chat/messages/list", middleware.Auth(http.HandlerFunc(handler.GetTeamMessages)))                        // 获取消息列表
+	mux.Handle("/api/team/chat/messages/read", middleware.Auth(http.HandlerFunc(handler.MarkMessageAsRead)))                      // 标记已读
+	mux.Handle("/api/team/chat/messages/delete", middleware.Auth(http.HandlerFunc(handler.DeleteMessage)))                        // 删除消息
+	mux.Handle("/api/team/chat/votes", middleware.Auth(http.HandlerFunc(handler.CreateVote)))                                     // 创建投票
+	mux.Handle("/api/team/chat/votes/list", middleware.Auth(http.HandlerFunc(handler.GetTeamVotes)))                              // 获取投票列表
+	mux.Handle("/api/team/chat/votes/by-message", middleware.Auth(http.HandlerFunc(handler.GetVoteByMessageID)))                  // 根据message_id获取投票
+	mux.Handle("/api/team/chat/votes/vote", middleware.Auth(http.HandlerFunc(handler.Vote)))                                      // 投票
+	mux.Handle("/api/team/chat/notifications", middleware.Auth(http.HandlerFunc(handler.CreateNotification)))                     // 创建通知
+	mux.Handle("/api/team/chat/notifications/list", middleware.Auth(http.HandlerFunc(handler.GetTeamNotifications)))              // 获取通知列表
+	mux.Handle("/api/team/chat/leave-requests", middleware.Auth(http.HandlerFunc(handler.CreateLeaveRequest)))                    // 创建请假申请
+	mux.Handle("/api/team/chat/leave-requests/list", middleware.Auth(http.HandlerFunc(handler.GetLeaveRequests)))                 // 获取请假申请列表
+	mux.Handle("/api/team/chat/leave-requests/review", middleware.Auth(http.HandlerFunc(handler.ReviewLeaveRequest)))             // 审核请假申请
 	mux.Handle("/api/team/chat/leave-requests/by-message", middleware.Auth(http.HandlerFunc(handler.GetLeaveRequestByMessageID))) // 根据message_id获取请假申请
+
+	// carousel
+	mux.HandleFunc("/api/public/carousel", handler.GetPublicCarousel)
+	mux.Handle("/api/admin/carousel", middleware.RoleAuth("admin")(http.HandlerFunc(handler.GetAllAdminCarousel)))
+	mux.Handle("/api/admin/carousel/create", middleware.RoleAuth("admin")(http.HandlerFunc(handler.CreateCarousel)))
+	mux.Handle("/api/admin/carousel/update", middleware.RoleAuth("admin")(http.HandlerFunc(handler.UpdateCarousel)))
+	mux.Handle("/api/admin/carousel/delete", middleware.RoleAuth("admin")(http.HandlerFunc(handler.DeleteCarousel)))
+	mux.Handle("/api/admin/carousel/upload", middleware.RoleAuth("admin")(http.HandlerFunc(handler.UploadCarouselImage)))
+	mux.Handle("/api/admin/carousel/reorder", middleware.RoleAuth("admin")(http.HandlerFunc(handler.ReorderCarouselImages)))
 
 	return middleware.CORS(mux)
 }

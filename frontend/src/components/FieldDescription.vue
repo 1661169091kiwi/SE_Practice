@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 
 // 组件属性
-const props = defineProps({
+defineProps({
   description: {
     type: String,
     required: true

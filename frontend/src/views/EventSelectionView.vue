@@ -20,8 +20,7 @@ const sportTypes = [
   { value: 'football', label: '足球' },
   { value: 'basketball', label: '篮球' },
   { value: 'badminton', label: '羽毛球' },
-  { value: 'volleyball', label: '排球' },
-  { value: 'water', label: '水上运动' }
+  { value: 'volleyball', label: '排球' }
 ]
 
 // 比赛状态选项
@@ -45,8 +44,7 @@ const sportIdMap = {
   1: 'football',
   2: 'basketball',
   3: 'badminton',
-  4: 'volleyball',
-  5: 'water'
+  4: 'volleyball'
 }
 
 // 获取赛事列表
@@ -58,12 +56,12 @@ const fetchEvents = async () => {
       // 映射后端数据到前端结构
       events.value = res.data.map(match => ({
         id: match.match_id,
+        eventName: match.event_name || '赛事活动',
         name: match.match_name,
         teamA: match.team_a_name || '主队',
         teamB: match.team_b_name || '客队',
         time: formatTime(match.match_time),
         timestamp: match.match_time ? new Date(match.match_time).getTime() : 0,
-        venue: '校体育馆', // 后端暂未返回场地信息，默认显示
         sportType: sportIdMap[match.sport_id] || 'football', // 默认足球
         // 归一化状态：ongoing -> in_progress
         status: match.status === 'ongoing' ? 'in_progress' : match.status
@@ -124,7 +122,14 @@ const filterEvents = () => {
 // 进入数据采集
 const goToDataCollection = (event) => {
   // 根据运动类型跳转到对应的数据录入页面
-  router.push(`/data-collection/${event.sportType}/${event.id}`)
+  router.push({
+    path: `/data-collection/${event.sportType}/${event.id}`,
+    query: {
+      name: event.name,
+      teamA: event.teamA,
+      teamB: event.teamB
+    }
+  })
 }
 
 // 切换到学生版视图
@@ -225,7 +230,8 @@ onMounted(() => {
             </span>
           </div>
           
-          <h3 class="event-title">{{ event.name }}</h3>
+          <h3 class="event-tournament-name">{{ event.eventName }}</h3>
+          <div class="event-match-name">{{ event.name }}</div>
           
           <div class="match-up">
             <div class="team-info">
@@ -241,10 +247,6 @@ onMounted(() => {
             <div class="detail-row">
               <span class="icon">🕒</span>
               <span>{{ event.time }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="icon">📍</span>
-              <span>{{ event.venue }}</span>
             </div>
           </div>
           
@@ -457,6 +459,21 @@ onMounted(() => {
   background: white;
 }
 
+.event-tournament-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+
+.event-match-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;
@@ -475,7 +492,6 @@ onMounted(() => {
 .sport-badge.basketball { background: linear-gradient(135deg, #f2994a, #f2c94c); }
 .sport-badge.badminton { background: linear-gradient(135deg, #FF512F, #DD2476); }
 .sport-badge.volleyball { background: linear-gradient(135deg, #11998e, #38ef7d); }
-.sport-badge.water { background: linear-gradient(135deg, #00c6ff, #0072ff); }
 
 .status-badge {
   font-size: 12px;
@@ -498,13 +514,6 @@ onMounted(() => {
 .status-badge.finished {
   color: #8c8c8c;
   background: rgba(140, 140, 140, 0.1);
-}
-
-.event-title {
-  font-size: 18px;
-  font-weight: 700;
-  margin: 0;
-  color: var(--text-primary);
 }
 
 .match-up {

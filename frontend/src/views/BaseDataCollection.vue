@@ -1,9 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, defineAsyncComponent } from 'vue'
-import { useRoute } from 'vue-router'
-import MatchHeader from '../components/MatchHeader.vue'
+import { useRoute, useRouter } from 'vue-router'
 import DataSaveActions from '../components/DataSaveActions.vue'
-import FieldDescription from '../components/FieldDescription.vue'
 import { get, post } from '../utils/http'
 
 import FootballDataCollection from './FootballDataCollection.vue'
@@ -15,15 +13,14 @@ const BadmintonDataCollection = defineAsyncComponent(() => import('./BadmintonDa
 const VolleyballDataCollection = defineAsyncComponent(
   () => import('./VolleyballDataCollection.vue'),
 )
-const WaterSportsDataCollection = defineAsyncComponent(
-  () => import('./WaterSportsDataCollection.vue'),
-)
 
 const route = useRoute()
+const router = useRouter()
 
 // 赛事信息
 const eventInfo = ref({
   id: '',
+  eventName: '',
   name: '赛事名称',
   teamA: '主队',
   teamB: '客队',
@@ -33,22 +30,49 @@ const eventInfo = ref({
 
 // 加载状态
 const isLoading = ref(true)
-const isSaving = ref(false)
 const isSubmitting = ref(false)
+
+const handleBack = () => {
+  if (window.history.length > 1) {
+    router.back()
+    return
+  }
+  router.push('/events')
+}
+
+const readQueryString = (key) => {
+  const v = route.query?.[key]
+  return Array.isArray(v) ? v[0] : v
+}
+const toNonEmptyString = (v) => {
+  const s = String(v ?? '').trim()
+  return s ? s : ''
+}
 
 const loadEventData = async () => {
   isLoading.value = true
   const sportType = route.params.sportType
   const eventId = route.params.eventId
+  const qName = toNonEmptyString(readQueryString('name'))
+  const qTeamA = toNonEmptyString(readQueryString('teamA'))
+  const qTeamB = toNonEmptyString(readQueryString('teamB'))
+  eventInfo.value = {
+    ...eventInfo.value,
+    id: String(eventId ?? eventInfo.value.id ?? ''),
+    name: qName || eventInfo.value.name,
+    teamA: qTeamA || eventInfo.value.teamA,
+    teamB: qTeamB || eventInfo.value.teamB
+  }
   try {
     const res = await get(`/collector/${sportType}/events/${eventId}`)
     if (res.code === 200) {
       const data = res.data
       eventInfo.value = {
-        id: data.id,
-        name: data.name,
-        teamA: data.teamA,
-        teamB: data.teamB,
+        id: data.id ?? String(eventId ?? ''),
+        eventName: data.eventName || '',
+        name: data.name || qName || eventInfo.value.name,
+        teamA: data.teamA || qTeamA || eventInfo.value.teamA || '主队',
+        teamB: data.teamB || qTeamB || eventInfo.value.teamB || '客队',
         teamAId: data.teamAId,
         teamBId: data.teamBId,
         status: data.status,
@@ -56,24 +80,43 @@ const loadEventData = async () => {
         currentData: data.currentData,
         autoFinishAt: data.autoFinishAt,
         candidatesTeamA: data.candidatesTeamA || [],
-        candidatesTeamB: data.candidatesTeamB || []
+        candidatesTeamB: data.candidatesTeamB || [],
+        availableTeams: data.availableTeams || []
       }
     }
-  } catch (error) {
+  } catch {
     eventInfo.value = {
-      id: eventId || '1',
-      name: `${sportType}赛事数据采集 (Offline/Mock)`,
-      teamA: '主队名称',
-      teamB: '客队名称',
-      status: 'in_progress',
-      collectorName: '采集员姓名',
+      ...eventInfo.value,
+      id: String(eventId ?? eventInfo.value.id ?? '1'),
+      name: qName || eventInfo.value.name || `${sportType}赛事数据采集 (Offline/Mock)`,
+      teamA: qTeamA || eventInfo.value.teamA || '主队',
+      teamB: qTeamB || eventInfo.value.teamB || '客队',
+      status: eventInfo.value.status === 'not_started' ? 'in_progress' : eventInfo.value.status,
+      collectorName: eventInfo.value.collectorName || '采集员姓名',
+      availableTeams: []
     }
   } finally {
     isLoading.value = false
   }
 }
 
- 
+const isTBDMatch = computed(() => {
+  const id = Number(eventInfo.value.id)
+  return !isNaN(id) && id < 0
+})
+
+const updateTeamName = (side) => {
+  const teams = eventInfo.value.availableTeams || []
+  if (side === 'A') {
+    const t = teams.find(x => x.id === eventInfo.value.teamAId)
+    if (t) eventInfo.value.teamA = t.name
+  } else {
+    const t = teams.find(x => x.id === eventInfo.value.teamBId)
+    if (t) eventInfo.value.teamB = t.name
+  }
+}
+
+
 
 // 提交服务器
 const performSubmit = async (statusOverride = null) => {
@@ -99,9 +142,6 @@ const performSubmit = async (statusOverride = null) => {
           break;
         case 'volleyball':
           sportData = currentCollectionRef.value.getVolleyballData ? currentCollectionRef.value.getVolleyballData() : {};
-          break;
-        case 'water':
-          sportData = currentCollectionRef.value.getWaterSportsData ? currentCollectionRef.value.getWaterSportsData() : {};
           break;
         default:
           sportData = {};
@@ -167,10 +207,14 @@ const performSubmit = async (statusOverride = null) => {
       eventInfo.value.status = 'finished'
       await loadEventData()
       // 可以在这里跳转回列表页
-      // router.push('/collector/events')
+      router.push('/events')
     } else {
       alert('数据已成功提交')
       await loadEventData()
+      // 如果ID发生了变化（例如从TBD变为正式比赛），更新URL
+      if (String(eventInfo.value.id) !== String(eventId)) {
+        router.replace(`/collector/${sportType}/events/${eventInfo.value.id}`)
+      }
     }
     
     isSubmitting.value = false
@@ -191,15 +235,11 @@ const componentsMap = {
   basketball: BasketballDataCollection,
   badminton: BadmintonDataCollection,
   volleyball: VolleyballDataCollection,
-  water: WaterSportsDataCollection,
-  'water_sports': WaterSportsDataCollection,
-  'water-sports': WaterSportsDataCollection,
 }
 
 // 计算当前应显示的组件
 const normalizeSportType = (t) => {
   const s = String(t || '').toLowerCase().trim()
-  if (s === 'water_sports' || s === 'water-sports' || s === 'watersports') return 'water'
   return s
 }
 const CurrentCollectionComponent = computed(() => {
@@ -208,7 +248,6 @@ const CurrentCollectionComponent = computed(() => {
 })
 
 // 组件实例引用
-const matchHeaderRef = ref(null)
 const fieldDescRefs = ref([])
 const currentCollectionRef = ref(null)
 
@@ -223,15 +262,41 @@ onMounted(() => {
 
 onUnmounted(() => {
   // 清理事件监听
-  matchHeaderRef.value?.cleanup?.()
   fieldDescRefs.value.forEach((ref) => ref?.cleanup?.())
 })
 </script>
 
 <template>
   <div class="data-collection-container">
-    <MatchHeader ref="matchHeaderRef" :event="eventInfo" in-progress-label="采集中" />
-
+    <header class="collection-topbar">
+      <button class="back-btn" type="button" @click="handleBack">
+        <span class="back-icon">←</span>
+        <span class="back-text">返回</span>
+      </button>
+      <div class="topbar-center">
+        <div v-if="eventInfo.eventName" class="topbar-event-name">{{ eventInfo.eventName }}</div>
+        <div class="topbar-title">{{ eventInfo.name || '数据采集' }}</div>
+        <div class="topbar-subtitle">
+          <template v-if="isTBDMatch">
+            <select v-model="eventInfo.teamAId" @change="updateTeamName('A')" class="team-select">
+              <option :value="0" disabled>选择主队</option>
+              <option v-for="t in (eventInfo.candidatesTeamA && eventInfo.candidatesTeamA.length ? eventInfo.candidatesTeamA : eventInfo.availableTeams)" :key="t.id" :value="t.id">{{t.name}}</option>
+            </select>
+            <span class="vs">VS</span>
+            <select v-model="eventInfo.teamBId" @change="updateTeamName('B')" class="team-select">
+              <option :value="0" disabled>选择客队</option>
+              <option v-for="t in (eventInfo.candidatesTeamB && eventInfo.candidatesTeamB.length ? eventInfo.candidatesTeamB : eventInfo.availableTeams)" :key="t.id" :value="t.id">{{t.name}}</option>
+            </select>
+          </template>
+          <template v-else>
+            <span class="team">{{ eventInfo.teamA }}</span>
+            <span class="vs">VS</span>
+            <span class="team">{{ eventInfo.teamB }}</span>
+          </template>
+        </div>
+      </div>
+      <div class="topbar-right"></div>
+    </header>
     <!-- 数据录入内容区域 -->
     <div class="collection-content">
       <!-- 动态加载对应的具体运动项目数据采集组件 -->
@@ -269,7 +334,146 @@ onUnmounted(() => {
   background-color: var(--background-secondary);
   display: flex;
   flex-direction: column;
-  padding-bottom: 80px; /* 为底部按钮留出空间 */
+}
+
+.collection-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.78);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.75);
+  color: rgba(0, 0, 0, 0.85);
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.back-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+.back-btn:active {
+  transform: translateY(0);
+}
+
+.back-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.back-text {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.topbar-center {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.topbar-event-name {
+  font-size: 16px;
+  font-weight: 800;
+  color: #1890ff;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.topbar-title {
+  max-width: 100%;
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.86);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-subtitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.62);
+  white-space: nowrap;
+}
+
+.topbar-subtitle .vs {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.team-select {
+  appearance: auto;
+  -webkit-appearance: auto;
+  background-color: rgba(255, 255, 255, 0.9);
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  color: #333;
+  padding: 4px 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  max-width: 100px;
+  min-width: 80px;
+  height: auto;
+  line-height: normal;
+  display: inline-block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.team-select:hover {
+  background-color: #fff;
+}
+
+.team-select:focus {
+  border-color: var(--primary-color);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.2);
+}
+
+.team-select option {
+  background-color: white;
+  color: #333;
+}
+
+.team {
+  font-size: 1.5rem;
+  font-weight: 600;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.topbar-right {
+  width: 72px;
 }
 
 .loading-container {
@@ -312,7 +516,7 @@ onUnmounted(() => {
 
 .collection-content {
   flex: 1;
-  padding: 32px 40px 120px;
+  padding: 20px 20px 100px;
   max-width: 1440px;
   width: 100%;
   margin: 0 auto;

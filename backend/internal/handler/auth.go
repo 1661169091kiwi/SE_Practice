@@ -14,13 +14,19 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http" //Go标准库的HTTP功能
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"se_practice/backend/internal/db"
 	"se_practice/backend/internal/middleware"
 	"se_practice/backend/internal/model"
 	"se_practice/backend/internal/service"
@@ -28,6 +34,40 @@ import (
 )
 
 var authService = service.NewAuthService() //创建一个AuthService全局变量，该变量用于处理认证相关的业务逻辑
+
+var mockUsersMu sync.Mutex
+var mockUsers = map[string]*model.User{}
+var mockPasswordHashes = map[string]string{}
+
+func hashPassword(pw string) string {
+	sum := sha256.Sum256([]byte(pw))
+	return hex.EncodeToString(sum[:])
+}
+
+func ensureMockUser(studentID, password, name, college, grade, role string, roles []string, applyStatus string) *model.User {
+	mockUsersMu.Lock()
+	defer mockUsersMu.Unlock()
+
+	if u, ok := mockUsers[studentID]; ok {
+		return u
+	}
+
+	u := &model.User{
+		StudentID:   studentID,
+		Password:    hashPassword(password),
+		Name:        name,
+		College:     college,
+		Grade:       grade,
+		Role:        role,
+		Roles:       roles,
+		AvatarURL:   "",
+		ApplyStatus: applyStatus,
+		CreatedAt:   time.Now(),
+	}
+	mockUsers[studentID] = u
+	mockPasswordHashes[studentID] = u.Password
+	return u
+}
 
 // 处理用户注册
 func Register(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +85,37 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.StudentID == "" || req.Password == "" || req.Name == "" {
 		util.Error(w, http.StatusBadRequest, "student_id, password, name are required")
+		return
+	}
+
+	if db.GetDB() == nil {
+		mockUsersMu.Lock()
+		_, exists := mockUsers[req.StudentID]
+		mockUsersMu.Unlock()
+		if exists {
+			util.Error(w, http.StatusConflict, "user already exists")
+			return
+		}
+
+		user := &model.User{
+			StudentID:   req.StudentID,
+			Password:    hashPassword(req.Password),
+			Name:        req.Name,
+			College:     req.College,
+			Grade:       req.Grade,
+			Role:        "student",
+			Roles:       []string{"student"},
+			AvatarURL:   "",
+			ApplyStatus: "none",
+			CreatedAt:   time.Now(),
+		}
+
+		mockUsersMu.Lock()
+		mockUsers[req.StudentID] = user
+		mockPasswordHashes[req.StudentID] = user.Password
+		mockUsersMu.Unlock()
+
+		util.OK(w, user)
 		return
 	}
 
@@ -76,6 +147,22 @@ func GetUserProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	studentID := parts[0]
+
+	if db.GetDB() == nil {
+		ensureMockUser("admin", "admin123", "管理员", "系统管理部", "system", "admin", []string{"student", "admin"}, "approved")
+		ensureMockUser("collector", "collector123", "采集员", "赛事采集部", "system", "collector", []string{"student", "collector"}, "approved")
+
+		mockUsersMu.Lock()
+		u := mockUsers[studentID]
+		mockUsersMu.Unlock()
+
+		if u == nil {
+			util.Error(w, http.StatusNotFound, "user not found")
+			return
+		}
+		util.OK(w, u)
+		return
+	}
 
 	// 调用服务层获取用户资料
 	profile, err := authService.GetUserProfile(studentID)
@@ -115,6 +202,42 @@ func UpdateCollege(w http.ResponseWriter, r *http.Request) {
 
 	// 调用服务层更新学院信息
 	response, err := authService.UpdateCollege(&req)
+	if err != nil {
+		if err == service.ErrUserNotFound {
+			util.Error(w, http.StatusNotFound, "user not found")
+			return
+		}
+		util.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// 返回成功响应
+	util.OK(w, response)
+}
+
+// UpdateName 更新用户姓名
+func UpdateName(w http.ResponseWriter, r *http.Request) {
+	// 检查是否为POST请求
+	if r.Method != http.MethodPost {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// 解析请求体
+	var req model.UpdateNameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		util.Error(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	// 验证请求参数
+	if req.StudentID == "" || req.Name == "" {
+		util.Error(w, http.StatusBadRequest, "student_id and name are required")
+		return
+	}
+
+	// 调用服务层更新姓名
+	response, err := authService.UpdateName(&req)
 	if err != nil {
 		if err == service.ErrUserNotFound {
 			util.Error(w, http.StatusNotFound, "user not found")
@@ -168,26 +291,54 @@ func UpdateAvatar(w http.ResponseWriter, r *http.Request) {
 		".png":  true,
 		".gif":  true,
 	}
-	ext := handler.Filename[strings.LastIndex(handler.Filename, "."):]
-	if !allowedTypes[strings.ToLower(ext)] {
+	ext := strings.ToLower(filepath.Ext(handler.Filename))
+	if !allowedTypes[ext] {
 		util.Error(w, http.StatusBadRequest, "invalid file type")
 		return
 	}
 
-	// 在实际应用中，这里应该将文件保存到服务器或云存储
-	// 为了简化，我们使用一个模拟的URL
-	// 实际部署时需要替换为真实的文件保存逻辑
-	avatarURL := "/uploads/avatars/" + studentID + ext
+	// Create directory if not exists
+	uploadDir := "./uploads/avatars"
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		util.Error(w, http.StatusInternalServerError, "failed to create upload directory")
+		return
+	}
 
-	// 调用服务层更新头像
-	err = authService.UpdateAvatar(studentID, avatarURL)
+	// Save file
+	filename := fmt.Sprintf("%s%s", studentID, ext)
+	filePath := filepath.Join(uploadDir, filename)
+	dst, err := os.Create(filePath)
 	if err != nil {
-		if err == service.ErrUserNotFound {
-			util.Error(w, http.StatusNotFound, "user not found")
+		util.Error(w, http.StatusInternalServerError, "failed to create file")
+		return
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, file); err != nil {
+		util.Error(w, http.StatusInternalServerError, "failed to save file")
+		return
+	}
+
+	avatarURL := "/uploads/avatars/" + filename
+
+	// 如果是Mock模式，更新Mock数据
+	if db.GetDB() == nil {
+		mockUsersMu.Lock()
+		if u, ok := mockUsers[studentID]; ok {
+			u.AvatarURL = avatarURL
+		}
+		mockUsersMu.Unlock()
+	} else {
+		// 调用服务层更新头像
+		err = authService.UpdateAvatar(studentID, avatarURL)
+		if err != nil {
+			if err == service.ErrUserNotFound {
+				util.Error(w, http.StatusNotFound, "user not found")
+				return
+			}
+			util.Error(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		util.Error(w, http.StatusInternalServerError, err.Error())
-		return
 	}
 
 	// 返回成功响应
@@ -210,6 +361,19 @@ func ChangePassword(w http.ResponseWriter, r *http.Request) {
 	var req model.ChangePasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		util.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if db.GetDB() == nil {
+		if req.StudentID == "" || req.OldPassword == "" || req.NewPassword == "" {
+			util.Error(w, http.StatusBadRequest, "student_id, old_password, new_password are required")
+			return
+		}
+		if req.OldPassword == req.NewPassword {
+			util.Error(w, http.StatusBadRequest, service.ErrPasswordSame.Error())
+			return
+		}
+		util.OK(w, map[string]string{"message": "password changed successfully"})
 		return
 	}
 
@@ -251,6 +415,11 @@ func ApplyCollector(w http.ResponseWriter, r *http.Request) {
 
 	if req.StudentID == "" {
 		util.Error(w, http.StatusBadRequest, "student_id is required")
+		return
+	}
+
+	if db.GetDB() == nil {
+		util.OK(w, map[string]string{"message": "申请已提交，等待审核"})
 		return
 	}
 
@@ -381,6 +550,11 @@ func ApplyAthlete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if db.GetDB() == nil {
+		util.OK(w, map[string]string{"message": "申请成功"})
+		return
+	}
+
 	if err := authService.ApplyAthlete(&req); err != nil {
 		// 根据错误类型返回不同的状态码
 		switch err {
@@ -459,6 +633,29 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if db.GetDB() == nil {
+		ensureMockUser("admin", "admin123", "管理员", "系统管理部", "system", "admin", []string{"student", "admin"}, "approved")
+		ensureMockUser("collector", "collector123", "采集员", "赛事采集部", "system", "collector", []string{"student", "collector"}, "approved")
+
+		mockUsersMu.Lock()
+		u := mockUsers[req.StudentID]
+		pwHash := mockPasswordHashes[req.StudentID]
+		mockUsersMu.Unlock()
+
+		if u == nil || pwHash == "" {
+			util.Error(w, http.StatusUnauthorized, "invalid student_id or password")
+			return
+		}
+		if hashPassword(req.Password) != pwHash {
+			util.Error(w, http.StatusUnauthorized, "invalid student_id or password")
+			return
+		}
+
+		token := signToken(u.StudentID, u.Role)
+		util.OK(w, model.LoginResponse{Token: token, User: *u})
+		return
+	}
+
 	user, err := authService.Login(&req)
 	if err != nil {
 		if err == service.ErrInvalidCredential {
@@ -495,4 +692,43 @@ func signToken(studentID, role string) string {
 
 func fmtInt(i int64) string {
 	return strconv.FormatInt(i, 10)
+}
+
+func mockStudentName(studentID string) string {
+	surnames := []string{"赵", "钱", "孙", "李", "周", "吴", "郑", "王", "冯", "陈", "褚", "卫", "蒋", "沈", "韩", "杨", "朱", "秦", "尤", "许", "何", "吕", "施", "张"}
+	givenNames := []string{"子涵", "梓轩", "雨涵", "欣怡", "浩然", "宇航", "若曦", "子墨", "思远", "晨曦", "嘉怡", "明轩", "一凡", "俊杰", "佳宁", "天宇", "可欣", "志远"}
+
+	seed := int64(0)
+	for _, ch := range studentID {
+		seed = seed*31 + int64(ch)
+	}
+	seed = absInt64(seed)
+
+	surname := surnames[int(seed%int64(len(surnames)))]
+	given := givenNames[int((seed/int64(len(surnames)))%int64(len(givenNames)))]
+	return surname + given
+}
+
+func mockMajor(studentID string) string {
+	majors := []string{"软件工程", "计算机科学与技术", "信息安全", "人工智能", "数据科学与大数据技术", "网络工程", "电子信息工程", "自动化", "工商管理", "金融学", "法学", "英语"}
+	seed := int64(0)
+	for _, ch := range studentID {
+		seed = seed*33 + int64(ch)
+	}
+	seed = absInt64(seed)
+	return majors[int(seed%int64(len(majors)))]
+}
+
+func inferGrade(studentID string) string {
+	if len(studentID) >= 4 {
+		return studentID[:4]
+	}
+	return ""
+}
+
+func absInt64(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

@@ -56,7 +56,7 @@ const handleLogin = async () => {
     } else {
       loginError.value = data.message || '登录失败'
     }
-  } catch (e) {
+  } catch {
     loginError.value = '登录失败，请稍后重试'
   }
 }

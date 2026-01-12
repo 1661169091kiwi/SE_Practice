@@ -50,18 +50,20 @@ const confirmFinish = () => {
       <span v-else>提交服务器</span>
     </button>
     <!-- 自定义确认弹窗 -->
-    <div v-if="showFinishConfirm" class="modal-overlay" @click.self="cancelFinish">
-      <div class="modal-card">
-        <div class="modal-header">结束比赛</div>
-        <div class="modal-body">
-          确定要结束这场比赛吗？结束后的比赛将进入“已结束”列表。此操作不可撤销。
-        </div>
-        <div class="modal-actions">
-          <button class="modal-btn cancel" @click="cancelFinish">取消</button>
-          <button class="modal-btn confirm" @click="confirmFinish">确认结束</button>
+    <Teleport to="body">
+      <div v-if="showFinishConfirm" class="modal-overlay" @click.self="cancelFinish">
+        <div class="modal-card">
+          <div class="modal-header">结束比赛</div>
+          <div class="modal-body">
+            确定要结束这场比赛吗？结束后的比赛将进入“已结束”列表。此操作不可撤销。
+          </div>
+          <div class="modal-actions">
+            <button class="modal-btn cancel" @click="cancelFinish">取消</button>
+            <button class="modal-btn confirm" @click="confirmFinish">确认结束</button>
+          </div>
         </div>
       </div>
-    </div>
+    </Teleport>
   </div>
 </template>
 
@@ -196,22 +198,26 @@ const confirmFinish = () => {
 /* 移动端适配 - 增强响应式体验 */
 @media (max-width: 768px) {
   .data-save-actions {
-    flex-direction: column;
-    padding: 16px 20px;
+    flex-direction: row;
+    padding: 12px 16px;
     gap: 12px;
   }
   
   .submit-server-button {
-    width: 100%;
+    width: auto;
+    flex: 1;
     min-width: unset;
-    padding: var(--spacing-lg) var(--spacing-xl);
-    font-size: var(--font-size-lg);
+    padding: 10px;
+    font-size: 14px;
   }
 
   .finish-match-button {
-    width: 100%;
+    width: auto;
+    flex: 1;
     margin-right: 0;
     min-width: unset;
+    padding: 10px;
+    font-size: 14px;
   }
   
   .action-button {

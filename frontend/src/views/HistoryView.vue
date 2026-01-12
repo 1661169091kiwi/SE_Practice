@@ -20,7 +20,7 @@ const historyData = ref([])
 
 // 筛选和分页参数
 const filterOptions = ref({
-  sportType: 'all', // all, football, basketball, badminton, volleyball, water_sports
+  sportType: 'all', // all, football, basketball, badminton, volleyball
   dateRange: '',    // 日期范围
   status: 'all'     // all, completed, pending, rejected
 })
@@ -41,8 +41,7 @@ const getSportTypeName = (type) => {
     football: '足球',
     basketball: '篮球',
     badminton: '羽毛球',
-    volleyball: '排球',
-    water_sports: '水上运动'
+    volleyball: '排球'
   }
   return typeMap[type] || type
 }
@@ -107,15 +106,6 @@ const loadHistoryData = (refresh = false) => {
         eventId: '401'
       },
       {
-        id: '1005',
-        eventName: '龙舟比赛 - 小组赛',
-        sportType: 'water_sports',
-        date: '2023-11-10',
-        submitTime: '2023-11-10 12:30:50',
-        status: 'completed',
-        eventId: '501'
-      },
-      {
         id: '1006',
         eventName: '自动化学院 vs 电子学院',
         sportType: 'football',
@@ -150,15 +140,6 @@ const loadHistoryData = (refresh = false) => {
         submitTime: '2023-11-06 17:45:05',
         status: 'completed',
         eventId: '402'
-      },
-      {
-        id: '1010',
-        eventName: '皮艇比赛 - 半决赛',
-        sportType: 'water_sports',
-        date: '2023-11-05',
-        submitTime: '2023-11-05 11:30:40',
-        status: 'approved',
-        eventId: '502'
       },
       {
         id: '1011',
@@ -309,7 +290,6 @@ onMounted(() => {
             <option value="basketball">篮球</option>
             <option value="badminton">羽毛球</option>
             <option value="volleyball">排球</option>
-            <option value="water_sports">水上运动</option>
           </select>
         </div>
         

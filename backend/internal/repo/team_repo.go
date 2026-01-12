@@ -19,6 +19,13 @@ func (r *TeamRepo) CreateTeam(team *model.Team) (int64, error) {
 	return db.Insert(query, team.TeamName, team.SportID, team.College, team.TeamType, team.AvatarURL, team.Description, team.CreatedBy, team.IsApproved)
 }
 
+// UpdateTeamAvatar 更新队伍头像
+func (r *TeamRepo) UpdateTeamAvatar(teamID int64, avatarURL string) error {
+	query := `UPDATE teams SET avatar_url = ? WHERE team_id = ?`
+	_, err := db.Exec(query, avatarURL, teamID)
+	return err
+}
+
 // GetTeamByID 获取队伍信息
 func (r *TeamRepo) GetTeamByID(teamID int64) (*model.Team, error) {
 	query := `SELECT team_id, team_name, sport_id, college, team_type, COALESCE(avatar_url, ''), COALESCE(description, ''), created_by, created_at, is_approved 

@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { del } from '@/utils/http'
 
 const props = defineProps(['eventId', 'eventInfo'])
 
@@ -105,7 +106,6 @@ const addCandidate = (team, candidate) => {
   lineups.value[team].push(np)
 }
 // 移除球员
-import { del } from '../utils/http'
 const removePlayer = async (team, index) => {
   const item = lineups.value[team][index]
   const isPersisted = !!item?.persisted
@@ -121,6 +121,10 @@ const removePlayer = async (team, index) => {
       }
       // 如果有 studentId 则仅按 studentId 删除；否则按外部字段删除
       if (!body.studentId) {
+        if (!body.name) {
+          alert('缺少球员姓名，无法删除')
+          return
+        }
       } else {
         body.name = ''
         body.position = ''
@@ -359,7 +363,7 @@ onUnmounted(() => {
               </button>
             </div>
             <button @click="addPlayer('teamB')" class="add-player-btn">
-              + 添加替补
+              + 添加选手
             </button>
           </div>
         </div>
@@ -376,11 +380,12 @@ onUnmounted(() => {
 
 <style scoped>
 .football-data-collection {
-  min-height: 100vh;
+  /* min-height: 100vh; 由父组件控制高度 */
   background-color: #f5f5f5;
   display: flex;
   flex-direction: column;
-  padding-bottom: 80px;
+  /* padding-bottom: 80px; 父组件已预留空间 */
+  height: 100%;
 }
 
 .loading-container {
@@ -608,15 +613,51 @@ onUnmounted(() => {
 
 @media (max-width: 768px) {
   .player-item {
-    flex-direction: column;
-    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 12px;
+    background-color: #fff;
+    border: 1px solid #f0f0f0;
+    border-radius: 8px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    margin-bottom: 8px;
+    align-items: center;
   }
+  
+  /* Name: Full width */
+  .player-item .player-input:nth-child(1) {
+    grid-column: 1 / -1;
+  }
+  
+  /* ID: Full width */
+  .player-item .player-input:nth-child(2) {
+    grid-column: 1 / -1;
+  }
+  
+  /* Number: Left */
+  .player-item .player-input:nth-child(3) {
+    grid-column: 1 / 2;
+  }
+  
+  /* Position: Right */
+  .player-item .player-input:nth-child(4) {
+    grid-column: 2 / 3;
+  }
+
   .checkbox-label {
+    grid-column: 1 / 2;
     margin-left: 0;
-    align-self: flex-start;
+    align-self: center;
+    justify-self: start;
   }
+  
   .remove-btn {
-    align-self: flex-start;
+    grid-column: 2 / 3;
+    align-self: center;
+    justify-self: end;
+    width: auto;
+    margin-top: 0;
   }
 }
 
@@ -824,13 +865,35 @@ onUnmounted(() => {
   }
   
   .score-display {
-    flex-direction: column;
-    gap: 16px;
+    flex-direction: row;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
   }
   
-  .team-score {
-    flex-direction: row;
-    gap: 16px;
+  .team-info {
+    min-width: auto;
+    flex: 1;
+  }
+  
+  .score-controls {
+    gap: 8px;
+  }
+  
+  .score-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 16px;
+  }
+  
+  .score {
+    font-size: 24px;
+    min-width: 30px;
+  }
+  
+  .vs {
+    font-size: 20px;
+    margin: 0 4px;
   }
   
   .form-row {

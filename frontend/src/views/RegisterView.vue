@@ -91,7 +91,7 @@ const handleRegister = async () => {
     } else {
       error.value = res.message || '注册失败'
     }
-  } catch (e) {
+  } catch {
     error.value = '注册失败，请稍后重试'
   }
 }

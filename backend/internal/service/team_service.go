@@ -43,7 +43,11 @@ func (s *TeamService) CreateTeam(req *model.CreateTeamRequest) (*model.Team, err
 	if err != nil {
 		return nil, err
 	}
+	if err := s.teamRepo.ApproveTeam(id); err != nil {
+		return nil, err
+	}
 	team.ID = id
+	team.IsApproved = true
 	return team, nil
 }
 
@@ -265,4 +269,36 @@ func (s *TeamService) UpdateTeamName(teamID int64, name, userID, role string) er
 	}
 
 	return s.teamRepo.UpdateTeamName(teamID, name)
+}
+
+// UpdateTeamAvatar 更新队伍头像（支持管理员、创建者、队长）
+func (s *TeamService) UpdateTeamAvatar(teamID int64, avatarURL, userID, role string) error {
+	// Verify permission: Admin, Creator, or Captain
+	if role == "admin" {
+		return s.teamRepo.UpdateTeamAvatar(teamID, avatarURL)
+	}
+
+	team, err := s.teamRepo.GetTeamByID(teamID)
+	if err != nil {
+		return err
+	}
+	if team == nil {
+		return errors.New("team not found")
+	}
+
+	// 检查是否是创建者
+	if team.CreatedBy == userID {
+		return s.teamRepo.UpdateTeamAvatar(teamID, avatarURL)
+	}
+
+	// 检查是否是队长
+	isCaptain, err := s.teamRepo.IsTeamCaptain(userID, teamID)
+	if err != nil {
+		return err
+	}
+	if !isCaptain {
+		return errors.New("permission denied: only admin, team creator, or captain can update team avatar")
+	}
+
+	return s.teamRepo.UpdateTeamAvatar(teamID, avatarURL)
 }

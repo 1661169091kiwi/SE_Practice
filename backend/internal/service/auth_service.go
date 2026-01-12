@@ -263,6 +263,39 @@ func (s *AuthService) UpdateCollege(req *model.UpdateCollegeRequest) (*model.Upd
 	}, nil
 }
 
+// UpdateName 更新用户姓名
+func (s *AuthService) UpdateName(req *model.UpdateNameRequest) (*model.UpdateNameResponse, error) {
+	// 检查用户是否存在
+	user, err := s.userRepo.GetUserByStudentID(req.StudentID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+
+	// 创建更新请求
+	updateReq := &model.UpdateUserRequest{
+		Name:      req.Name,
+		College:   user.College,
+		Grade:     user.Grade,
+		AvatarURL: user.AvatarURL,
+	}
+
+	// 更新用户信息
+	err = s.userRepo.UpdateUserProfile(req.StudentID, updateReq)
+	if err != nil {
+		return nil, err
+	}
+
+	// 返回更新后的姓名信息
+	return &model.UpdateNameResponse{
+		StudentID: req.StudentID,
+		Name:      req.Name,
+		Message:   "姓名更新成功",
+	}, nil
+}
+
 // ChangePassword 修改用户密码
 func (s *AuthService) ChangePassword(req *model.ChangePasswordRequest) error {
 	// 1. 根据学号获取用户信息

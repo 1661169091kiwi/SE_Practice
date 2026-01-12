@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -47,10 +48,20 @@ type CollectorMatchDetail struct {
 	} `json:"currentData"`
 }
 
-// Global DSN (using the one from config)
-const dsn = "root:15329554862ph@tcp(localhost:3306)/sports_management?charset=utf8mb4&parseTime=True&loc=Local"
+var dsn = func() string {
+	if v := os.Getenv("TEST_DB_DSN"); v != "" {
+		return v
+	}
+	return os.Getenv("DB_DSN")
+}()
 
 func TestCollectorBusinessLoop(t *testing.T) {
+	if dsn == "" {
+		t.Skip("TEST_DB_DSN or DB_DSN is required to run database-backed tests")
+	}
+	if os.Getenv("ALLOW_DB_TESTS") == "" {
+		t.Skip("Set ALLOW_DB_TESTS=1 to run database-backed tests")
+	}
 	// 1. Initialize DB
 	if _, err := db.Init(dsn); err != nil {
 		t.Fatalf("Failed to connect to DB: %v", err)

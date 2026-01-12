@@ -31,6 +31,8 @@ func Init(dsn string) (*sql.DB, error) {
 
 	// 测试连接
 	if err = DB.Ping(); err != nil {
+		_ = DB.Close()
+		DB = nil
 		return nil, fmt.Errorf("failed to ping database: %v", err)
 	}
 

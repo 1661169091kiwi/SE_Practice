@@ -2,10 +2,17 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 
+	"se_practice/backend/internal/db"
 	"se_practice/backend/internal/middleware"
 	"se_practice/backend/internal/model"
 	"se_practice/backend/internal/service"
@@ -13,6 +20,28 @@ import (
 )
 
 var teamService = service.NewTeamService()
+
+var mockTeamsMu sync.Mutex
+var mockTeams = map[int64]*model.Team{}
+var mockTeamNextID int64 = 1
+
+func mockCloneTeam(t *model.Team) model.Team {
+	if t == nil {
+		return model.Team{}
+	}
+	return model.Team{
+		ID:          t.ID,
+		TeamName:    t.TeamName,
+		SportID:     t.SportID,
+		College:     t.College,
+		TeamType:    t.TeamType,
+		AvatarURL:   t.AvatarURL,
+		Description: t.Description,
+		CreatedBy:   t.CreatedBy,
+		CreatedAt:   t.CreatedAt,
+		IsApproved:  t.IsApproved,
+	}
+}
 
 // CreateTeam 创建队伍
 func CreateTeam(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +79,34 @@ func CreateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if db.GetDB() == nil {
+		if req.TeamName == "" || req.SportID <= 0 {
+			util.Error(w, http.StatusBadRequest, "team_name and sport_id are required")
+			return
+		}
+		mockTeamsMu.Lock()
+		id := mockTeamNextID
+		mockTeamNextID++
+		team := &model.Team{
+			ID:          id,
+			TeamName:    req.TeamName,
+			SportID:     req.SportID,
+			College:     req.College,
+			TeamType:    req.TeamType,
+			AvatarURL:   req.AvatarURL,
+			Description: req.Description,
+			CreatedBy:   req.CreatedBy,
+			IsApproved:  true,
+		}
+		mockTeams[id] = team
+		out := mockCloneTeam(team)
+		mockTeamsMu.Unlock()
+
+		log.Printf("[Admin Log] Team created (mock): %s by %s", out.TeamName, req.CreatedBy)
+		util.OK(w, out)
+		return
+	}
+
 	team, err := teamService.CreateTeam(&req)
 	if err != nil {
 		util.Error(w, http.StatusInternalServerError, err.Error())
@@ -72,6 +129,19 @@ func GetPendingTeams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if db.GetDB() == nil {
+		mockTeamsMu.Lock()
+		out := make([]model.Team, 0)
+		for _, t := range mockTeams {
+			if t != nil && !t.IsApproved {
+				out = append(out, mockCloneTeam(t))
+			}
+		}
+		mockTeamsMu.Unlock()
+		util.OK(w, out)
+		return
+	}
+
 	teams, err := teamService.GetPendingTeams()
 	if err != nil {
 		util.Error(w, http.StatusInternalServerError, err.Error())
@@ -79,6 +149,108 @@ func GetPendingTeams(w http.ResponseWriter, r *http.Request) {
 	}
 
 	util.OK(w, teams)
+}
+
+// UpdateTeamAvatar 更新队伍头像
+func UpdateTeamAvatar(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	claims, ok := middleware.AuthClaims(r)
+	if !ok {
+		util.Error(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	// 1. Parse Multipart Form (10MB)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		util.Error(w, http.StatusBadRequest, "failed to parse multipart form")
+		return
+	}
+
+	// 2. Get team_id
+	teamIDStr := r.FormValue("team_id")
+	if teamIDStr == "" {
+		util.Error(w, http.StatusBadRequest, "team_id is required")
+		return
+	}
+	teamID, err := strconv.ParseInt(teamIDStr, 10, 64)
+	if err != nil {
+		util.Error(w, http.StatusBadRequest, "invalid team_id")
+		return
+	}
+
+	// 3. Get File
+	file, handler, err := r.FormFile("avatar")
+	if err != nil {
+		util.Error(w, http.StatusBadRequest, "failed to get file")
+		return
+	}
+	defer file.Close()
+
+	// 4. Validate file type
+	allowedTypes := map[string]bool{
+		".jpg":  true,
+		".jpeg": true,
+		".png":  true,
+		".gif":  true,
+	}
+	ext := strings.ToLower(filepath.Ext(handler.Filename))
+	if !allowedTypes[ext] {
+		util.Error(w, http.StatusBadRequest, "invalid file type")
+		return
+	}
+
+	// 5. Create directory
+	uploadDir := "./uploads/teams"
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		util.Error(w, http.StatusInternalServerError, "failed to create upload directory")
+		return
+	}
+
+	// 6. Save file
+	filename := fmt.Sprintf("team_%d%s", teamID, ext)
+	filePath := filepath.Join(uploadDir, filename)
+	dst, err := os.Create(filePath)
+	if err != nil {
+		util.Error(w, http.StatusInternalServerError, "failed to create file")
+		return
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, file); err != nil {
+		util.Error(w, http.StatusInternalServerError, "failed to save file")
+		return
+	}
+
+	avatarURL := "/uploads/teams/" + filename
+
+	// 7. Update DB
+	if db.GetDB() == nil {
+		// Mock
+		mockTeamsMu.Lock()
+		if t, ok := mockTeams[teamID]; ok {
+			t.AvatarURL = avatarURL
+		}
+		mockTeamsMu.Unlock()
+	} else {
+		err = teamService.UpdateTeamAvatar(teamID, avatarURL, claims.Sub, claims.Role)
+		if err != nil {
+			if strings.Contains(err.Error(), "permission denied") {
+				util.Error(w, http.StatusForbidden, err.Error())
+			} else {
+				util.Error(w, http.StatusInternalServerError, err.Error())
+			}
+			return
+		}
+	}
+
+	util.OK(w, map[string]string{
+		"avatar_url": avatarURL,
+		"message":    "team avatar updated successfully",
+	})
 }
 
 // ApproveTeam 批准队伍
@@ -97,6 +269,20 @@ func ApproveTeam(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		util.Error(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+
+	if db.GetDB() == nil {
+		mockTeamsMu.Lock()
+		t := mockTeams[req.TeamID]
+		if t == nil {
+			mockTeamsMu.Unlock()
+			util.Error(w, http.StatusNotFound, "team not found")
+			return
+		}
+		t.IsApproved = true
+		mockTeamsMu.Unlock()
+		util.OK(w, "team approved")
 		return
 	}
 
@@ -136,6 +322,19 @@ func DeleteTeam(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		util.Error(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	if db.GetDB() == nil {
+		mockTeamsMu.Lock()
+		if _, ok := mockTeams[id]; !ok {
+			mockTeamsMu.Unlock()
+			util.Error(w, http.StatusNotFound, "team not found")
+			return
+		}
+		delete(mockTeams, id)
+		mockTeamsMu.Unlock()
+		util.OK(w, "team deleted")
 		return
 	}
 
@@ -322,6 +521,16 @@ func GetMyTeams(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if db.GetDB() == nil {
+		studentID := r.URL.Query().Get("student_id")
+		if studentID == "" {
+			util.Error(w, http.StatusBadRequest, "student_id is required")
+			return
+		}
+		util.OK(w, []model.Team{})
+		return
+	}
+
 	studentID := r.URL.Query().Get("student_id")
 	if studentID == "" {
 		util.Error(w, http.StatusBadRequest, "student_id is required")
@@ -360,6 +569,33 @@ func ApplyCreateTeam(w http.ResponseWriter, r *http.Request) {
 	// 强制设置创建者为当前用户
 	req.CreatedBy = claims.Sub
 
+	if db.GetDB() == nil {
+		if req.TeamName == "" || req.SportID == 0 {
+			util.Error(w, http.StatusBadRequest, "team_name and sport_id are required")
+			return
+		}
+		mockTeamsMu.Lock()
+		id := mockTeamNextID
+		mockTeamNextID++
+		team := &model.Team{
+			ID:          id,
+			TeamName:    req.TeamName,
+			SportID:     req.SportID,
+			College:     req.College,
+			TeamType:    req.TeamType,
+			AvatarURL:   req.AvatarURL,
+			Description: req.Description,
+			CreatedBy:   req.CreatedBy,
+			IsApproved:  false,
+		}
+		mockTeams[id] = team
+		out := mockCloneTeam(team)
+		mockTeamsMu.Unlock()
+
+		util.OK(w, out)
+		return
+	}
+
 	team, err := teamService.ApplyCreateTeam(&req)
 	if err != nil {
 		util.Error(w, http.StatusInternalServerError, err.Error())
@@ -373,6 +609,34 @@ func ApplyCreateTeam(w http.ResponseWriter, r *http.Request) {
 func ListTeams(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		util.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if db.GetDB() == nil {
+		sportIDStr := r.URL.Query().Get("sport_id")
+		var sportID int64 = 0
+		if sportIDStr != "" {
+			var err error
+			sportID, err = strconv.ParseInt(sportIDStr, 10, 64)
+			if err != nil {
+				util.Error(w, http.StatusBadRequest, "invalid sport_id")
+				return
+			}
+		}
+
+		mockTeamsMu.Lock()
+		out := make([]model.Team, 0)
+		for _, t := range mockTeams {
+			if t == nil || !t.IsApproved {
+				continue
+			}
+			if sportID > 0 && t.SportID != sportID {
+				continue
+			}
+			out = append(out, mockCloneTeam(t))
+		}
+		mockTeamsMu.Unlock()
+		util.OK(w, out)
 		return
 	}
 

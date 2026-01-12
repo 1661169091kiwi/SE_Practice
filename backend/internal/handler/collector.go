@@ -52,6 +52,16 @@ func GetCollectorMatchDetail(w http.ResponseWriter, r *http.Request) {
 	ur := repo.NewUserRepo()
 	teamA, _ := ur.GetTeamByID(match.TeamAID)
 	teamB, _ := ur.GetTeamByID(match.TeamBID)
+
+	teamAName := "TBD"
+	if teamA != nil {
+		teamAName = teamA.TeamName
+	}
+	teamBName := "TBD"
+	if teamB != nil {
+		teamBName = teamB.TeamName
+	}
+
 	tr := repo.NewTeamRepo()
 	membersA, _ := tr.GetTeamMembers(match.TeamAID)
 	membersB, _ := tr.GetTeamMembers(match.TeamBID)
@@ -75,11 +85,23 @@ func GetCollectorMatchDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	autoFinishAt := match.Time.Add(72 * time.Hour).Format(time.RFC3339)
 
+	// Fetch available teams for the event
+	er := repo.NewEventRepo()
+	eventTeams, _ := er.ListEventTeams(match.EventID)
+	var availableTeams []model.CollectorTeamBrief
+	for _, et := range eventTeams {
+		availableTeams = append(availableTeams, model.CollectorTeamBrief{
+			ID:   et.TeamID,
+			Name: et.TeamName,
+		})
+	}
+
 	resp := model.CollectorMatchDetailResponse{
 		ID:              match.ID,
+		EventName:       match.EventName,
 		Name:            match.Name,
-		TeamA:           teamA.TeamName,
-		TeamB:           teamB.TeamName,
+		TeamA:           teamAName,
+		TeamB:           teamBName,
 		TeamAID:         match.TeamAID,
 		TeamBID:         match.TeamBID,
 		Time:            match.Time.Format("2006-01-02 15:04"),
@@ -89,6 +111,7 @@ func GetCollectorMatchDetail(w http.ResponseWriter, r *http.Request) {
 		AutoFinishAt:    autoFinishAt,
 		CandidatesTeamA: candidatesA,
 		CandidatesTeamB: candidatesB,
+		AvailableTeams:  availableTeams,
 		CurrentData: model.CollectorMatchData{
 			Scores: model.MatchScores{
 				TeamA: match.ScoreA,
@@ -179,6 +202,10 @@ func SubmitCollectorData(w http.ResponseWriter, r *http.Request) {
 		Data          struct {
 			Scores model.MatchScores `json:"scores"`
 		} `json:"data"`
+		EventInfo struct {
+			TeamAId interface{} `json:"teamAId"`
+			TeamBId interface{} `json:"teamBId"`
+		} `json:"eventInfo"`
 	}
 	var envLineupsLoose struct {
 		Data struct {
@@ -215,6 +242,26 @@ func SubmitCollectorData(w http.ResponseWriter, r *http.Request) {
 			util.Error(w, http.StatusBadRequest, "scores cannot be negative")
 			return
 		}
+	} else if matchID < 0 {
+		// 检查是否包含队伍信息，如果是 TBD 比赛且有队伍信息，则实例化比赛
+		taIDStr := toString(envScoresOnly.EventInfo.TeamAId)
+		tbIDStr := toString(envScoresOnly.EventInfo.TeamBId)
+		if taIDStr != "" && tbIDStr != "" {
+			taID, _ := strconv.ParseInt(taIDStr, 10, 64)
+			tbID, _ := strconv.ParseInt(tbIDStr, 10, 64)
+			if taID > 0 && tbID > 0 {
+				log.Printf("[Collector] Instantiating knockout match %d with teams %d vs %d", matchID, taID, tbID)
+				mrepo := repo.NewMatchRepo()
+				realMatchID, err := mrepo.InstantiateKnockoutMatch(-matchID, taID, tbID)
+				if err != nil {
+					log.Printf("[Collector] Failed to instantiate match: %v", err)
+					// 不报错，尝试继续（虽然可能会失败）
+				} else {
+					log.Printf("[Collector] Match instantiated as ID: %d", realMatchID)
+					matchID = realMatchID
+				}
+			}
+		}
 	}
 
 	mrepo := repo.NewMatchRepo()
@@ -247,6 +294,25 @@ func SubmitCollectorData(w http.ResponseWriter, r *http.Request) {
 		_ = tx.Rollback()
 		util.Error(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	// 更新队伍ID（如果有）
+	if useEnv {
+		taIDStr := toString(envScoresOnly.EventInfo.TeamAId)
+		tbIDStr := toString(envScoresOnly.EventInfo.TeamBId)
+		if taIDStr != "" && tbIDStr != "" {
+			taID, _ := strconv.ParseInt(taIDStr, 10, 64)
+			tbID, _ := strconv.ParseInt(tbIDStr, 10, 64)
+			if taID > 0 && tbID > 0 {
+				if _, err = tx.Exec("UPDATE matches SET team_a_id = ?, team_b_id = ? WHERE match_id = ?", taID, tbID, matchID); err != nil {
+					_ = tx.Rollback()
+					util.Error(w, http.StatusInternalServerError, err.Error())
+					return
+				}
+				match.TeamAID = taID
+				match.TeamBID = tbID
+			}
+		}
 	}
 
 	// 如果传入了状态且不为空，更新状态

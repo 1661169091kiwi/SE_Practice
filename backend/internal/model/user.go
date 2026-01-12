@@ -71,6 +71,19 @@ type UpdateCollegeResponse struct {
 	Message   string `json:"message"`
 }
 
+// UpdateNameRequest 更新姓名请求
+type UpdateNameRequest struct {
+	StudentID string `json:"student_id" binding:"required"`
+	Name      string `json:"name" binding:"required"`
+}
+
+// UpdateNameResponse 更新姓名响应
+type UpdateNameResponse struct {
+	StudentID string `json:"student_id"`
+	Name      string `json:"name"`
+	Message   string `json:"message"`
+}
+
 // ApplyAthleteRequest 申请成为运动员请求
 type ApplyAthleteRequest struct {
 	StudentID    string `json:"student_id" binding:"required"`

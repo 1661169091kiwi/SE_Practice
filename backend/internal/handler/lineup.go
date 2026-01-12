@@ -44,10 +44,18 @@ func Lineups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet {
-		list, err := lineupService.ListByMatch(matchID)
+		if db.GetDB() == nil {
+			util.OK(w, []model.MatchLineup{})
+			return
+		}
+		mrepo := repo.NewMatchRepo()
+		list, err := mrepo.GetMatchLineups(matchID)
 		if err != nil {
 			util.Error(w, http.StatusInternalServerError, err.Error())
 			return
+		}
+		if list == nil {
+			list = []model.MatchLineup{}
 		}
 		util.OK(w, list)
 		return
