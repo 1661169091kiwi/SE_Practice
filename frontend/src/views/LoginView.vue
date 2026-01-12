@@ -31,6 +31,7 @@ const handleLogin = async () => {
       authStore.setToken(data.data.token)
       const userRole = data.data.user?.role
       const userStudentId = data.data.user?.student_id
+      const userAvatar = data.data.user?.avatar_url
       
       if (userRole) {
         authStore.setRole(userRole)
@@ -40,6 +41,9 @@ const handleLogin = async () => {
       }
       if (userStudentId) {
         authStore.setStudentId(userStudentId)
+      }
+      if (userAvatar) {
+        authStore.setAvatar(userAvatar)
       }
       
       loginError.value = ''

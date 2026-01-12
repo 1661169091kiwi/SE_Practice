@@ -6,6 +6,7 @@ export const useAuthStore = defineStore('auth', () => {
   const role = ref(localStorage.getItem('role') || '')
   const roles = ref(JSON.parse(localStorage.getItem('roles') || '[]'))
   const studentId = ref(localStorage.getItem('studentId') || '')
+  const avatar = ref(localStorage.getItem('avatar') || '')
 
   function setToken(newToken) {
     token.value = newToken
@@ -31,15 +32,25 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('studentId', id)
   }
 
+  function setAvatar(url) {
+    avatar.value = url
+    localStorage.setItem('avatar', url)
+  }
+
   function clearAuth() {
     token.value = ''
     role.value = ''
     roles.value = []
     studentId.value = ''
+    avatar.value = ''
     localStorage.removeItem('token')
     localStorage.removeItem('role')
     localStorage.removeItem('roles')
     localStorage.removeItem('studentId')
+    localStorage.removeItem('avatar')
+    // 清除Kiwi助手会话记录
+    sessionStorage.removeItem('kiwi_chat_messages')
+    sessionStorage.removeItem('kiwi_selected_model')
   }
 
   return {
@@ -47,11 +58,13 @@ export const useAuthStore = defineStore('auth', () => {
     role,
     roles,
     studentId,
+    avatar,
     setToken,
     setRole,
     setRoles,
     hasRole,
     setStudentId,
+    setAvatar,
     clearAuth
   }
 })

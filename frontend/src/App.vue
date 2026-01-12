@@ -13,7 +13,12 @@ onMounted(async () => {
     try {
       // 尝试获取用户信息以验证 token 和用户状态
       // http.js 会自动处理 401 Unauthorized
-      await get(`/user/profile/${authStore.studentId}`)
+      const res = await get(`/user/profile/${authStore.studentId}`)
+      if (res && res.code === 200 && res.data) {
+        if (res.data.avatar_url) {
+          authStore.setAvatar(res.data.avatar_url)
+        }
+      }
     } catch (err) {
       console.warn('Session check failed:', err)
       // 如果是 404 (用户不存在) 或其他非网络错误，清除无效会话

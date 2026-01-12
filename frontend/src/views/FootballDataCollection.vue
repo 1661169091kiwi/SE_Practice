@@ -312,7 +312,7 @@ onUnmounted(() => {
               </button>
             </div>
             <button @click="addPlayer('teamA')" class="add-player-btn">
-              + 添加替补
+              + 添加选手
             </button>
           </div>
         </div>

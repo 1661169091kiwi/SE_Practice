@@ -1,8 +1,6 @@
 server:
   port: 8080
 database:
-  dsn: "root:15329554862ph@tcp(localhost:3306)/sports_management?charset=utf8mb4&parseTime=True&loc=Local"
+  dsn: "root:15329554862ph@tcp(localhost:3306)/sports_management?charset=utf8mb4&parseTime=true&loc=Local"
 jwt:
   secret: "change-me"
-
-

@@ -174,8 +174,9 @@ const athleteForm = reactive({
 // 创建队伍表单
 const createTeamForm = reactive({
   teamName: '',
+  sportId: '',
   college: '',
-  description: '',
+  teamType: '',
   avatarUrl: ''
 })
 
@@ -802,18 +803,30 @@ const handleApplyAthleteSubmit = async () => {
 // 打开创建队伍弹窗
 const openCreateTeamModal = () => {
   uiState.showCreateTeamModal = true
+  // 重置表单
+  createTeamForm.teamName = ''
+  createTeamForm.sportId = ''
+  createTeamForm.teamType = ''
   // 预填学院
   createTeamForm.college = userInfo.department
 }
 
 // 提交创建队伍
 const handleCreateTeamSubmit = async () => {
-  if (!athleteForm.sportId) {
-    showToast('请先选择运动项目', 'error')
-    return
-  }
   if (!createTeamForm.teamName) {
     showToast('请输入队伍名称', 'error')
+    return
+  }
+  if (!createTeamForm.sportId) {
+    showToast('请选择运动项目', 'error')
+    return
+  }
+  if (!createTeamForm.college) {
+    showToast('请输入所属学院', 'error')
+    return
+  }
+  if (!createTeamForm.teamType) {
+    showToast('请选择队伍类型', 'error')
     return
   }
   
@@ -821,10 +834,9 @@ const handleCreateTeamSubmit = async () => {
   try {
     const res = await post('/teams/apply-create', {
       team_name: createTeamForm.teamName,
-      sport_id: parseInt(athleteForm.sportId) || 1, // 默认为当前选择的运动或足球
+      sport_id: parseInt(createTeamForm.sportId),
       college: createTeamForm.college,
-      team_type: 'college', // 默认为学院队
-      description: createTeamForm.description,
+      team_type: createTeamForm.teamType,
       avatar_url: createTeamForm.avatarUrl
     })
     
@@ -1414,13 +1426,28 @@ onMounted(() => {
           </div>
           
           <div class="form-group">
+            <label class="form-label">运动项目</label>
+            <select v-model="createTeamForm.sportId" class="form-input">
+              <option value="" disabled>请选择项目</option>
+              <option value="1">足球</option>
+              <option value="2">篮球</option>
+              <option value="3">羽毛球</option>
+              <option value="4">排球</option>
+            </select>
+          </div>
+
+          <div class="form-group">
             <label class="form-label">所属学院/单位</label>
-            <input v-model="createTeamForm.college" type="text" class="form-input">
+            <input v-model="createTeamForm.college" type="text" class="form-input" placeholder="例如: 计算机学院">
           </div>
           
           <div class="form-group">
-            <label class="form-label">队伍简介</label>
-            <textarea v-model="createTeamForm.description" class="form-input" rows="3"></textarea>
+            <label class="form-label">队伍类型</label>
+            <select v-model="createTeamForm.teamType" class="form-input">
+              <option value="" disabled>请选择队伍类型</option>
+              <option value="college">院队</option>
+              <option value="school">校队</option>
+            </select>
           </div>
         </div>
         

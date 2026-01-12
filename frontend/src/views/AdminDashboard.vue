@@ -167,7 +167,9 @@
               <div class="form-group">
                 <label>队伍数量</label>
                 <input type="number" :value="eventForm.team_count" disabled />
-                <small class="hint">根据所选队伍自动计算，建议为 2 的幂</small>
+                <small class="hint" :style="{ color: !isPowerOfTwo(eventForm.team_count) ? '#f5222d' : '' }">
+                  根据所选队伍自动计算，{{ !isPowerOfTwo(eventForm.team_count) ? '队伍数量必须为 2 的幂' : '建议为 2 的幂' }}
+                </small>
               </div>
             </div>
 
@@ -231,7 +233,7 @@
               </div>
             </div>
             <div class="form-actions">
-              <button type="submit" class="submit-btn" :disabled="loading">
+              <button type="submit" class="submit-btn" :disabled="loading || (isKnockoutConfigEnabled && !isPowerOfTwo(eventForm.team_count))">
                 {{ loading ? (isEditingEvent ? '保存中...' : '创建中...') : (isEditingEvent ? '保存修改' : '创建赛事') }}
               </button>
               <button v-if="isEditingEvent" type="button" class="cancel-btn" @click="cancelEditEvent">取消</button>
@@ -609,9 +611,8 @@
               </div>
               <div class="form-group">
                 <label>赛制类型</label>
-                <select v-model="eventForm.format_type" required>
+                <select v-model="eventForm.format_type" required disabled style="background-color: #f5f5f5; color: #999;">
                   <option value="points">积分制</option>
-                  <option value="knockout">淘汰赛</option>
                 </select>
               </div>
             </div>
@@ -894,8 +895,10 @@ const teamForm = ref({
 const matchEventSportFilter = ref('')
 
 const filteredEventsForMatch = computed(() => {
-  if (!matchEventSportFilter.value) return events.value
-  return events.value.filter(e => sportIdToValue(e.sport_id) === matchEventSportFilter.value)
+  // Only allow creating matches for points events
+  const pointsEvents = events.value.filter(e => normalizeFormatType(e.format_type) === 'points')
+  if (!matchEventSportFilter.value) return pointsEvents
+  return pointsEvents.filter(e => sportIdToValue(e.sport_id) === matchEventSportFilter.value)
 })
 
 const onMatchEventSportFilterChange = () => {
@@ -1740,11 +1743,14 @@ const fetchTeams = async () => {
 const fetchEvents = async () => {
   try {
     const res = await http.get('/events/list')
-     if (res && Array.isArray(res.data)) {
-        events.value = res.data
+    let data = []
+    if (res && Array.isArray(res.data)) {
+        data = res.data
     } else if (Array.isArray(res)) {
-        events.value = res
+        data = res
     }
+    // Show all events
+    events.value = data
   } catch (e) {
     console.warn('获取赛事失败，将使用手动输入', e)
   }

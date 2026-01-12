@@ -1,8 +1,9 @@
 <script setup>
-import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import { get, post } from '@/utils/http'
 import { useAuthStore } from '@/stores/auth'
+import { marked } from 'marked'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -98,6 +99,252 @@ const isLoading = ref(false)
 const chipContainerRef = ref(null)
 const finishedQueue = ref([])
 const showFinished = ref(false)
+
+// Kiwi Assistant State
+const chatInput = ref('')
+const chatMessages = ref([
+  { 
+    role: 'assistant', 
+    content: '你好！我是中大体育智能助手Kiwi。我可以为你解答关于中山大学体育课、体测标准的问题，也可以帮你查询近期的体育赛事。有什么我可以帮你的吗？', 
+    type: 'text' 
+  }
+])
+const isChatLoading = ref(false)
+const chatMessagesRef = ref(null)
+// Initialize from sessionStorage directly
+const selectedModel = ref(sessionStorage.getItem('kiwi_selected_model') || 'pro') 
+const isModelDropdownOpen = ref(false)
+const modelDropdownRef = ref(null)
+
+// Persist selection
+watch(selectedModel, (newVal) => {
+  console.log('[Kiwi] Model changed to:', newVal)
+  sessionStorage.setItem('kiwi_selected_model', newVal)
+})
+
+const toggleModelDropdown = () => {
+  isModelDropdownOpen.value = !isModelDropdownOpen.value
+}
+
+const selectModel = (model) => {
+  selectedModel.value = model
+  isModelDropdownOpen.value = false
+}
+
+const handleClickOutside = (event) => {
+  if (modelDropdownRef.value && !modelDropdownRef.value.contains(event.target)) {
+    isModelDropdownOpen.value = false
+  }
+}
+
+const scrollToBottom = () => {
+  nextTick(() => {
+    if (chatMessagesRef.value) {
+      chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight
+    }
+  })
+}
+
+// System Prompt with SYSU PE Info
+const SYSTEM_PROMPT = `你叫Kiwi，是中山大学的体育智能助手。
+你负责解答中山大学体育相关事项，以及提供运动指导。
+你需要知道中大体测相关的事项：
+
+一、体测成绩的组成与影响
+1. 体育课权重：
+   - 大一秋季：体测占体育课总分 30%
+   - 大二、大三秋季：体测占体育课总分 80%
+2. 保研门槛：大一至大三学年体测平均分需达及格（60分）及以上。
+3. 毕业要求：体测成绩达不到 50 分者按结业处理。
+4. 特色加分：体测总分达到良好（80分）或优秀（90分），可获体育课“课外积分”奖励（5-10分）。
+
+二、核心测试项目与权重
+- BMI (15%)
+- 肺活量 (15%)
+- 50米跑 (20%)
+- 立定跳远 (10%)
+- 坐位体前屈 (10%)
+- 引体向上(男)/仰卧起坐(女) (10%)
+- 1000米(男)/800米(女) (20%) [有额外加分，最高20分]
+
+三、评分标准（简要）
+- 及格(60分)：BMI正常范围，肺活量(男3100/女2000)，50米(男9.1/女10.3)，跳远(男208/女151)，体前屈(男3.7/女6.0)，引体10/仰卧26，1000米4'32"/800米4'34"。
+- 优秀(90分)：指标更高，如1000米3'27"，引体17个等。
+
+四、中大政策
+- 加分规则：1000m/800m和引体/仰卧满分后可加分，最高20分。
+- 奖学金与保研：必须及格。
+
+工具能力：
+你可以调用 search_events(query) 来搜索比赛。
+如果搜索到比赛，你可以通过 tool_calls 返回，并在最后回复中告知用户。
+界面会根据你的 tool_calls 自动显示比赛卡片。`
+
+const renderMarkdown = (text) => {
+  if (!text) return ''
+  try {
+    return marked(text)
+  } catch (e) {
+    return text
+  }
+}
+
+const processChatResponse = async (messagesPayload) => {
+  isChatLoading.value = true
+  scrollToBottom()
+
+  try {
+    const response = await fetch('https://api.chatanywhere.org/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer sk-yDfjbHsHoDsCyPox4EaSwlr5rw8HPZLYXx4gvhVb9zgC5LRK'
+      },
+      body: JSON.stringify({
+        model: selectedModel.value === 'pro' ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview',
+        messages: messagesPayload,
+        tools: [
+          {
+            type: 'function',
+            function: {
+              name: 'search_events',
+              description: '搜索相关的体育比赛',
+              parameters: {
+                type: 'object',
+                properties: {
+                  query: {
+                    type: 'string',
+                    description: '队伍名称或赛事名称，例如"篮球"、"数计学院"、"决赛"'
+                  }
+                },
+                required: ['query']
+              }
+            }
+          }
+        ]
+      })
+    })
+
+    const data = await response.json()
+    
+    if (data.error) {
+       console.error('API Error:', data.error)
+       if (data.error.code === 'model_not_found') {
+          chatMessages.value.push({ role: 'assistant', content: '抱歉，当前AI模型不可用，请联系管理员。', type: 'text' })
+       } else {
+          chatMessages.value.push({ role: 'assistant', content: '抱歉，我遇到了一些问题，请稍后再试。', type: 'text' })
+       }
+       return
+    }
+
+    const choice = data.choices[0]
+    const message = choice.message
+
+    if (message.content) {
+      chatMessages.value.push({ role: 'assistant', content: message.content, type: 'text' })
+    }
+
+    if (message.tool_calls) {
+      const toolCall = message.tool_calls[0]
+      if (toolCall.function.name === 'search_events') {
+         const args = JSON.parse(toolCall.function.arguments)
+         const searchResults = searchEventsTool(args.query)
+         
+         if (searchResults.length > 0) {
+            searchResults.forEach(event => {
+               chatMessages.value.push({ role: 'assistant', type: 'match-card', data: event })
+            })
+         }
+
+         const newMessages = [...messagesPayload, message, {
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            name: toolCall.function.name,
+            content: JSON.stringify(searchResults.map(e => ({ id: e.id, name: e.eventName + ' ' + e.name, time: e.time })))
+         }]
+
+         const secondResponse = await fetch('https://api.chatanywhere.org/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer sk-yDfjbHsHoDsCyPox4EaSwlr5rw8HPZLYXx4gvhVb9zgC5LRK'
+            },
+            body: JSON.stringify({
+              model: selectedModel.value === 'pro' ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview',
+              messages: newMessages
+            })
+         })
+         const secondData = await secondResponse.json()
+         if (secondData.choices && secondData.choices[0].message.content) {
+            chatMessages.value.push({ role: 'assistant', content: secondData.choices[0].message.content, type: 'text' })
+         }
+      }
+    }
+
+  } catch (error) {
+    console.error('Chat Error:', error)
+    chatMessages.value.push({ role: 'assistant', content: '网络连接异常，请检查网络。', type: 'text' })
+  } finally {
+    isChatLoading.value = false
+    scrollToBottom()
+  }
+}
+
+const sendMessage = async () => {
+  if (!chatInput.value.trim() || isChatLoading.value) return
+  
+  const userMsg = chatInput.value.trim()
+  chatMessages.value.push({ role: 'user', content: userMsg, type: 'text' })
+  chatInput.value = ''
+  
+  const messages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    ...chatMessages.value.filter(m => m.type === 'text').map(m => ({ role: m.role, content: m.content }))
+  ]
+  
+  await processChatResponse(messages)
+}
+
+const regenerateResponse = async () => {
+  if (isChatLoading.value) return
+  
+  // Find the last user message index
+  let lastUserIndex = -1
+  for (let i = chatMessages.value.length - 1; i >= 0; i--) {
+    if (chatMessages.value[i].role === 'user') {
+      lastUserIndex = i
+      break
+    }
+  }
+  
+  if (lastUserIndex === -1) return
+
+  // Remove everything after the last user message (including the user message itself if we want to "re-send", but actually we just want to remove the *assistant's* response to it)
+  // Actually, usually "regenerate" means "generate again for the last prompt".
+  // So we keep the last user message, but remove subsequent assistant messages.
+  
+  chatMessages.value = chatMessages.value.slice(0, lastUserIndex + 1)
+  
+  const messages = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    ...chatMessages.value.filter(m => m.type === 'text').map(m => ({ role: m.role, content: m.content }))
+  ]
+  
+  await processChatResponse(messages)
+}
+
+const searchEventsTool = (query) => {
+  if (!query) return []
+  const lowerQuery = query.toLowerCase()
+  return events.value.filter(e => 
+    e.name.toLowerCase().includes(lowerQuery) || 
+    e.eventName.toLowerCase().includes(lowerQuery) ||
+    e.teamA.toLowerCase().includes(lowerQuery) ||
+    e.teamB.toLowerCase().includes(lowerQuery) ||
+    (e.sportType && sportTypes.find(t => t.value === e.sportType)?.label.includes(lowerQuery))
+  ).slice(0, 3) // Return top 3 matches
+}
+
 const selectedMonthStr = ref('')
 const showMonthPicker = ref(false)
 const pickerYear = ref(new Date().getFullYear())
@@ -619,14 +866,37 @@ onBeforeRouteLeave((to, from, next) => {
   next()
 })
 
+const userAvatarUrl = computed(() => {
+  if (!authStore.avatar) return null
+  if (authStore.avatar.startsWith('http')) return authStore.avatar
+  return `${API_BASE_URL}${authStore.avatar}`
+})
+
+// Watch Chat Messages
+watch(chatMessages, (newVal) => {
+  sessionStorage.setItem('kiwi_chat_messages', JSON.stringify(newVal))
+}, { deep: true })
+
 // 生命周期钩子
 onMounted(() => {
   window.addEventListener('scroll', handleScroll)
   window.addEventListener('click', closeEventDropdown)
+  window.addEventListener('click', handleClickOutside)
 
   const savedTab = sessionStorage.getItem('student_event_active_tab')
-  if (savedTab && ['home', 'all', 'subscribed'].includes(savedTab)) {
+  if (savedTab && ['home', 'all', 'subscribed', 'kiwi'].includes(savedTab)) {
     activeTab.value = savedTab
+  }
+
+  // Restore Chat
+  const savedChat = sessionStorage.getItem('kiwi_chat_messages')
+  if (savedChat) {
+    try {
+      chatMessages.value = JSON.parse(savedChat)
+      scrollToBottom()
+    } catch (e) {
+      console.error('Failed to parse chat history', e)
+    }
   }
 
   const savedEventId = sessionStorage.getItem('student_event_selected_id')
@@ -679,6 +949,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
   window.removeEventListener('click', closeEventDropdown)
+  window.removeEventListener('click', handleClickOutside)
   stopCarousel()
 })
 </script>
@@ -749,8 +1020,160 @@ onUnmounted(() => {
         >
           我关注的
         </button>
+        <button 
+          class="tab-btn" 
+          :class="{ active: activeTab === 'kiwi' }"
+          @click="switchTab('kiwi')"
+        >
+          Kiwi助手
+        </button>
       </div>
     </header>
+
+    <!-- Kiwi 助手内容 -->
+    <div v-if="activeTab === 'kiwi'" class="kiwi-view fade-in">
+      <div class="chat-container glass-card">
+        <div class="chat-header">
+          <div class="header-left">
+            <div class="avatar-kiwi">
+              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1890ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="10" rx="2"></rect>
+                <circle cx="12" cy="5" r="2"></circle>
+                <path d="M12 7v4"></path>
+                <line x1="8" y1="16" x2="8" y2="16"></line>
+                <line x1="16" y1="16" x2="16" y2="16"></line>
+              </svg>
+            </div>
+            <div class="chat-info">
+              <h3>Kiwi助手</h3>
+              <div class="status-container">
+                <span class="status-dot"></span>
+                <span class="status-text">在线</span>
+              </div>
+            </div>
+          </div>
+          <div class="model-selector" ref="modelDropdownRef">
+            <div class="custom-select" :class="{ open: isModelDropdownOpen }">
+              <div class="select-trigger" @click="toggleModelDropdown">
+                <span class="selected-text">{{ selectedModel === 'pro' ? 'Gemini 3.0 Pro' : 'Gemini 3.0 Flash' }}</span>
+                <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </div>
+              <transition name="fade-slide">
+                <div class="options-list" v-if="isModelDropdownOpen">
+                  <div class="option-item" :class="{ selected: selectedModel === 'pro' }" @click="selectModel('pro')">
+                    <div class="option-content">
+                      <span class="option-title">Gemini 3.0 Pro</span>
+                      <span class="option-desc">推理能力更强</span>
+                    </div>
+                    <span v-if="selectedModel === 'pro'" class="check-icon">✓</span>
+                  </div>
+                  <div class="option-item" :class="{ selected: selectedModel === 'flash' }" @click="selectModel('flash')">
+                    <div class="option-content">
+                      <span class="option-title">Gemini 3.0 Flash</span>
+                      <span class="option-desc">响应速度更快</span>
+                    </div>
+                    <span v-if="selectedModel === 'flash'" class="check-icon">✓</span>
+                  </div>
+                </div>
+              </transition>
+            </div>
+          </div>
+        </div>
+        
+        <div class="chat-messages" ref="chatMessagesRef">
+          <div v-for="(msg, index) in chatMessages" :key="index" class="message-wrapper" :class="msg.role">
+            <div v-if="msg.role === 'assistant'" class="avatar-kiwi-small">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1890ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="10" rx="2"></rect>
+                <circle cx="12" cy="5" r="2"></circle>
+                <path d="M12 7v4"></path>
+                <line x1="8" y1="16" x2="8" y2="16"></line>
+                <line x1="16" y1="16" x2="16" y2="16"></line>
+              </svg>
+            </div>
+            <div class="message-content">
+              <div v-if="msg.type === 'text'" class="text-bubble markdown-body" v-html="renderMarkdown(msg.content)"></div>
+              <div v-else-if="msg.type === 'match-card'" class="match-recommend-card" @click="goToMatchDetail(msg.data)">
+                <div class="mini-card-header">
+                  <span class="sport-badge-mini" :class="msg.data.sportType">
+                    {{ sportTypes.find(t => t.value === msg.data.sportType)?.label }}
+                  </span>
+                  <span class="status-badge-mini" :class="normalizeStatus(msg.data.status)">
+                    {{ getStatusText(msg.data.status) }}
+                  </span>
+                </div>
+                <div class="mini-card-content">
+                  <div class="team-mini">
+                    <div class="avatar-mini">
+                      <img v-if="msg.data.teamAAvatar" :src="msg.data.teamAAvatar" :alt="msg.data.teamA" />
+                      <span v-else>{{ msg.data.teamA.charAt(0) }}</span>
+                    </div>
+                    <span class="team-name-mini">{{ msg.data.teamA }}</span>
+                  </div>
+                  <div class="score-mini">VS</div>
+                  <div class="team-mini">
+                    <div class="avatar-mini">
+                      <img v-if="msg.data.teamBAvatar" :src="msg.data.teamBAvatar" :alt="msg.data.teamB" />
+                      <span v-else>{{ msg.data.teamB.charAt(0) }}</span>
+                    </div>
+                    <span class="team-name-mini">{{ msg.data.teamB }}</span>
+                  </div>
+                </div>
+                <div class="mini-card-footer">
+                  {{ msg.data.eventName }} | {{ msg.data.time }}
+                </div>
+              </div>
+              
+              <!-- Regenerate Button -->
+              <div v-if="msg.role === 'assistant' && index === chatMessages.length - 1 && !isChatLoading" 
+                   class="regenerate-actions">
+                 <button class="regenerate-btn" @click="regenerateResponse" title="重新生成">
+                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                     <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                   </svg>
+                   <span>重新生成</span>
+                 </button>
+              </div>
+            </div>
+            <div v-if="msg.role === 'user'" class="avatar-user-small">
+              <img v-if="userAvatarUrl" :src="userAvatarUrl" alt="Me" class="user-avatar-img" />
+              <span v-else>👤</span>
+            </div>
+          </div>
+          <div v-if="isChatLoading" class="message-wrapper assistant">
+            <div class="avatar-kiwi-small">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1890ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="10" rx="2"></rect>
+                <circle cx="12" cy="5" r="2"></circle>
+                <path d="M12 7v4"></path>
+                <line x1="8" y1="16" x2="8" y2="16"></line>
+                <line x1="16" y1="16" x2="16" y2="16"></line>
+              </svg>
+            </div>
+            <div class="message-content">
+              <div class="typing-indicator">
+                <span></span><span></span><span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chat-input-area">
+          <input 
+            v-model="chatInput" 
+            @keyup.enter="sendMessage"
+            type="text" 
+            placeholder="问问Kiwi关于中大体育的事情..." 
+            :disabled="isChatLoading"
+          />
+          <button class="send-btn" @click="sendMessage" :disabled="!chatInput.trim() || isChatLoading">
+            发送
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- 首页内容 -->
     <div v-if="activeTab === 'home'" class="home-view fade-in">
@@ -927,7 +1350,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 赛事列表 -->
-    <div v-if="activeTab !== 'home'" class="event-list">
+    <div v-if="activeTab !== 'home' && activeTab !== 'kiwi'" class="event-list">
       <div class="finished-cta">
         <button class="load-finished-btn" @click="toggleFinished">
           {{ showFinished ? '隐藏已结束比赛' : `显示已结束比赛 · ${finishedQueue.length} 场` }}
@@ -2237,6 +2660,420 @@ onUnmounted(() => {
   height: 100%;
   object-fit: cover;
 }
+
+/* Kiwi Assistant Chat Styles */
+.kiwi-view {
+  padding: 20px;
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+  height: calc(100vh - 140px);
+}
+
+.chat-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+.chat-header {
+  padding: 16px 20px;
+  background: white;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.model-selector {
+  position: relative;
+  z-index: 100;
+}
+
+.custom-select {
+  position: relative;
+  width: 160px;
+  font-size: 13px;
+}
+
+.select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--text-primary);
+}
+
+.select-trigger:hover, .custom-select.open .select-trigger {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.15);
+}
+
+.arrow-icon {
+  color: var(--text-secondary);
+  transition: transform 0.3s ease;
+}
+
+.custom-select.open .arrow-icon {
+  transform: rotate(180deg);
+}
+
+.options-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 200px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  padding: 4px;
+}
+
+.option-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.option-item:hover {
+  background: #f5f7fa;
+}
+
+.option-item.selected {
+  background: #e6f7ff;
+  color: var(--primary-color);
+}
+
+.option-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.option-title {
+  font-weight: 500;
+  color: inherit;
+}
+
+.option-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.option-item.selected .option-desc {
+  color: rgba(24, 144, 255, 0.8);
+}
+
+.check-icon {
+  color: var(--primary-color);
+  font-weight: bold;
+}
+
+/* Transitions */
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: all 0.2s ease;
+}
+
+.fade-slide-enter-from,
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.user-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.status-container {
+  display: flex;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.avatar-kiwi {
+  font-size: 28px;
+  background: #e6f7ff;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-kiwi-small {
+  font-size: 20px;
+  background: #e6f7ff;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.avatar-user-small {
+  font-size: 20px;
+  background: #f0f2f5;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.chat-info h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: #52c41a;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.status-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  scroll-behavior: smooth;
+}
+
+.message-wrapper {
+  display: flex;
+  gap: 12px;
+  max-width: 85%;
+}
+
+.message-wrapper.assistant {
+  align-self: flex-start;
+}
+
+.message-wrapper.user {
+  align-self: flex-end;
+}
+
+.text-bubble {
+  padding: 12px 16px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.assistant .text-bubble {
+  background: white;
+  color: var(--text-primary);
+  border-top-left-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.user .text-bubble {
+  background: #e6f7ff;
+  color: var(--text-primary);
+  border-top-right-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  border: 1px solid rgba(24, 144, 255, 0.2);
+}
+
+.chat-input-area {
+  padding: 16px 20px;
+  background: white;
+  border-top: 1px solid rgba(0,0,0,0.05);
+  display: flex;
+  gap: 12px;
+}
+
+.chat-input-area input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 24px;
+  outline: none;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.chat-input-area input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(79, 172, 254, 0.1);
+}
+
+.send-btn {
+  padding: 0 24px;
+  border-radius: 24px;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.send-btn:hover {
+  background: var(--primary-active);
+  transform: translateY(-1px);
+}
+
+.send-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.match-recommend-card {
+  background: white;
+  border-radius: 16px;
+  padding: 12px;
+  width: 260px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid rgba(0,0,0,0.05);
+}
+
+.match-recommend-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+  border-color: var(--primary-color);
+}
+
+.typing-indicator span {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: #ccc;
+  border-radius: 50%;
+  margin: 0 2px;
+  animation: typing 1.4s infinite ease-in-out both;
+}
+
+.typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+.typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes typing {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}
+
+.status-badge-mini {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #f0f0f0;
+  color: #666;
+}
+
+.status-badge-mini.ongoing { background: #e6ffec; color: #52c41a; }
+.status-badge-mini.finished { background: #f5f5f5; color: #999; }
+
+/* Markdown Styles */
+.markdown-body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+.markdown-body p {
+  margin-bottom: 8px;
+}
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+.markdown-body ul, .markdown-body ol {
+  padding-left: 20px;
+  margin-bottom: 8px;
+}
+.markdown-body code {
+  background: rgba(0,0,0,0.05);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+.markdown-body pre {
+  background: #f6f8fa;
+  padding: 10px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin-bottom: 8px;
+}
+.user .markdown-body code {
+  background: rgba(255,255,255,0.2);
+}
+.user .markdown-body pre {
+  background: rgba(0,0,0,0.1);
+}
+
+/* Regenerate Button */
+.regenerate-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.regenerate-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 12px;
+  transition: all 0.2s;
+  opacity: 0.6;
+}
+
+.message-wrapper:hover .regenerate-btn {
+  opacity: 1;
+}
+
+.regenerate-btn:hover {
+  background: rgba(0,0,0,0.05);
+  color: var(--primary-color);
+}
+
 
 .team-name-mini {
   font-size: 12px;

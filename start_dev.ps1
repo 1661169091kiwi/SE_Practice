@@ -9,7 +9,7 @@ Write-Host "正在启动后端服务 (Database Mode)..." -ForegroundColor Cyan
 # 构造后端启动命令
 # 注意：这里我们直接将路径注入到命令字符串中，并使用双引号确保变量被解析
 # DSN 中的特殊字符已经包含在单引号中
-$BackendCmd = "Set-Location '$ScriptDir\backend'; `$env:DB_DSN='root:15329554862ph@tcp(127.0.0.1:3306)/sports_management?charset=utf8mb4&parseTime=True&loc=Local'; go run ./cmd/api"
+$BackendCmd = "Set-Location '$ScriptDir\backend'; `$env:DB_DSN='root:15329554862ph@tcp(127.0.0.1:3306)/sports_management?charset=utf8mb4&parseTime=true&loc=Local'; go run ./cmd/api"
 
 Start-Process powershell -ArgumentList "-NoExit", "-Command", $BackendCmd
 

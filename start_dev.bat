@@ -5,7 +5,7 @@ cd /d "%~dp0"
 echo Starting Sports Management System...
 
 :: Set DB_DSN (escaped ampersands just in case)
-set "DB_DSN=root:15329554862ph@tcp(127.0.0.1:3306)/sports_management?charset=utf8mb4^&parseTime=True^&loc=Local"
+set "DB_DSN=root:15329554862ph@tcp(127.0.0.1:3306)/sports_management?charset=utf8mb4&parseTime=true&loc=Local"
 
 echo Starting Backend...
 start "Backend API" cmd /k "cd backend && go run ./cmd/api || echo Backend failed && pause"

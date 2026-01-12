@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	dsn := "root:15329554862ph@tcp(127.0.0.1:3306)/sports_management?charset=utf8mb4&parseTime=True&loc=Local"
+	dsn := "root:15329554862ph@tcp(127.0.0.1:3306)/sports_management?charset=utf8mb4&parseTime=true&loc=Local"
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		log.Fatal(err)
