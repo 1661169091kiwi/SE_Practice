@@ -176,9 +176,15 @@ const SYSTEM_PROMPT = `你叫Kiwi，是中山大学的体育智能助手。
 - 奖学金与保研：必须及格。
 
 工具能力：
-你可以调用 search_events(query) 来搜索比赛。
-如果搜索到比赛，你可以通过 tool_calls 返回，并在最后回复中告知用户。
-界面会根据你的 tool_calls 自动显示比赛卡片。`
+工具能力：
+1. search_events(query): 搜索相关的体育比赛 (Matches)。仅当用户询问具体比赛、赛程或结果时使用。如果用户询问“积分榜”、“排名”、“对阵图”，绝对不要使用此工具。
+2. get_my_subscriptions(): 查询我关注的比赛。
+3. set_sport_filter(sport_type): 筛选比赛类型 (football, basketball, badminton, volleyball, all)。
+4. get_standings(query): 查询赛事积分榜或对阵信息（query为赛事名称）。
+重要提示：
+- 如果用户询问“积分榜”、“排名”、“第几名”、“对阵表”，必须使用 get_standings(query)。
+- 如果用户询问“什么时候有比赛”、“查询篮球赛”，使用 search_events(query)。
+界面会根据你的 tool_calls 自动显示相应卡片或执行操作。`
 
 const renderMarkdown = (text) => {
   if (!text) return ''
@@ -204,22 +210,66 @@ const processChatResponse = async (messagesPayload) => {
         model: selectedModel.value === 'pro' ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview',
         messages: messagesPayload,
         tools: [
-          {
+            {
             type: 'function',
             function: {
               name: 'search_events',
-              description: '搜索相关的体育比赛',
+              description: 'Search for specific MATCHES or GAMES (schedule, score). DO NOT use for standings/rankings/tables.',
               parameters: {
                 type: 'object',
                 properties: {
                   query: {
                     type: 'string',
-                    description: '队伍名称或赛事名称，例如"篮球"、"数计学院"、"决赛"'
+                    description: 'Name of the team or event (e.g. "Lakers", "Finals")'
                   }
                 },
                 required: ['query']
               }
             }
+          },
+          {
+            type: 'function',
+            function: {
+              name: 'get_my_subscriptions',
+              description: '获取用户当前关注的比赛列表',
+              parameters: { type: 'object', properties: {} }
+            }
+          },
+          {
+            type: 'function',
+            function: {
+              name: 'set_sport_filter',
+              description: '设置比赛筛选类型',
+              parameters: {
+                type: 'object',
+                properties: {
+                  sport_type: {
+                    type: 'string',
+                    enum: ['football', 'basketball', 'badminton', 'volleyball', 'all'],
+                    description: '运动类型'
+                  }
+                },
+                required: ['sport_type']
+              }
+            }
+          },
+
+          {
+             type: 'function',
+             function: {
+               name: 'get_standings',
+               description: 'Get STANDINGS, RANKINGS, SCORE TABLE, or BRACKET for a tournament.',
+               parameters: {
+                 type: 'object',
+                 properties: {
+                   query: {
+                     type: 'string',
+                     description: 'Tournament name (e.g. "Super League", "Freshman Cup")'
+                   }
+                 },
+                 required: ['query']
+               }
+             }
           }
         ]
       })
@@ -245,39 +295,70 @@ const processChatResponse = async (messagesPayload) => {
     }
 
     if (message.tool_calls) {
-      const toolCall = message.tool_calls[0]
-      if (toolCall.function.name === 'search_events') {
-         const args = JSON.parse(toolCall.function.arguments)
-         const searchResults = searchEventsTool(args.query)
-         
-         if (searchResults.length > 0) {
-            searchResults.forEach(event => {
-               chatMessages.value.push({ role: 'assistant', type: 'match-card', data: event })
-            })
-         }
+      const toolCalls = message.tool_calls
+      const toolResponses = []
 
-         const newMessages = [...messagesPayload, message, {
-            role: 'tool',
-            tool_call_id: toolCall.id,
-            name: toolCall.function.name,
-            content: JSON.stringify(searchResults.map(e => ({ id: e.id, name: e.eventName + ' ' + e.name, time: e.time })))
-         }]
+      for (const toolCall of toolCalls) {
+        const args = JSON.parse(toolCall.function.arguments)
+        let result = ''
 
-         const secondResponse = await fetch('https://api.chatanywhere.org/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer sk-yDfjbHsHoDsCyPox4EaSwlr5rw8HPZLYXx4gvhVb9zgC5LRK'
-            },
-            body: JSON.stringify({
-              model: selectedModel.value === 'pro' ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview',
-              messages: newMessages
-            })
-         })
-         const secondData = await secondResponse.json()
-         if (secondData.choices && secondData.choices[0].message.content) {
-            chatMessages.value.push({ role: 'assistant', content: secondData.choices[0].message.content, type: 'text' })
-         }
+        if (toolCall.function.name === 'search_events') {
+           const searchResults = searchEventsTool(args.query)
+           if (searchResults.length > 0) {
+              searchResults.forEach(event => {
+                 chatMessages.value.push({ role: 'assistant', type: 'match-card', data: event })
+              })
+           }
+           result = JSON.stringify(searchResults.map(e => ({ id: e.id, name: e.eventName + ' ' + e.name, time: e.time })))
+        } else if (toolCall.function.name === 'get_my_subscriptions') {
+           const subs = await getMySubscriptionsTool()
+           result = JSON.stringify(subs)
+        } else if (toolCall.function.name === 'set_sport_filter') {
+           const success = setSportFilterTool(args.sport_type)
+           result = success ? `已成功筛选为 ${args.sport_type}` : '筛选失败，类型无效'
+
+        } else if (toolCall.function.name === 'get_standings') {
+           const standingData = await getStandingsTool(args.query)
+           if (standingData) {
+             chatMessages.value.push({ role: 'assistant', type: 'standings-card', data: standingData })
+             result = `已展示 ${standingData.eventName} 的${standingData.format_type === 'points' ? '积分榜' : '赛制信息'}。`
+           } else {
+             result = '未找到相关赛事的积分榜信息。'
+           }
+        }
+
+        toolResponses.push({
+           role: 'tool',
+           tool_call_id: toolCall.id,
+           name: toolCall.function.name,
+           content: result
+        })
+      }
+
+      const newMessages = [...messagesPayload, message, ...toolResponses]
+
+      try {
+        const secondResponse = await fetch('https://api.chatanywhere.org/v1/chat/completions', {
+           method: 'POST',
+           headers: {
+             'Content-Type': 'application/json',
+             'Authorization': 'Bearer sk-yDfjbHsHoDsCyPox4EaSwlr5rw8HPZLYXx4gvhVb9zgC5LRK'
+           },
+           body: JSON.stringify({
+             model: selectedModel.value === 'pro' ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview',
+             messages: newMessages
+           })
+        })
+        const secondData = await secondResponse.json()
+        if (secondData.error) {
+           console.error('[Kiwi] Second API Error:', secondData.error)
+           chatMessages.value.push({ role: 'assistant', content: '处理您的请求时遇到了一些问题。', type: 'text' })
+        } else if (secondData.choices && secondData.choices[0].message.content) {
+           chatMessages.value.push({ role: 'assistant', content: secondData.choices[0].message.content, type: 'text' })
+        }
+      } catch (err2) {
+         console.error('[Kiwi] Second API Network Error:', err2)
+         chatMessages.value.push({ role: 'assistant', content: '网络连接不稳定，无法获取完整回复。', type: 'text' })
       }
     }
 
@@ -303,6 +384,17 @@ const sendMessage = async () => {
   ]
   
   await processChatResponse(messages)
+}
+
+const resetChat = () => {
+  chatMessages.value = [
+    { 
+      role: 'assistant', 
+      content: '你好！我是中大体育智能助手Kiwi。我可以为你解答关于中山大学体育课、体测标准的问题，也可以帮你查询近期的体育赛事。有什么我可以帮你的吗？', 
+      type: 'text' 
+    }
+  ]
+  sessionStorage.removeItem('kiwi_chat_messages')
 }
 
 const regenerateResponse = async () => {
@@ -336,13 +428,110 @@ const regenerateResponse = async () => {
 const searchEventsTool = (query) => {
   if (!query) return []
   const lowerQuery = query.toLowerCase()
-  return events.value.filter(e => 
+  
+  // Anti-pattern check: if query contains "standings" or "rank" related keywords, return empty to avoid noise
+  if (['积分', '排名', '榜', 'standings', 'rank'].some(k => lowerQuery.includes(k))) {
+    return []
+  }
+
+  const results = events.value.filter(e => 
     e.name.toLowerCase().includes(lowerQuery) || 
     e.eventName.toLowerCase().includes(lowerQuery) ||
     e.teamA.toLowerCase().includes(lowerQuery) ||
     e.teamB.toLowerCase().includes(lowerQuery) ||
     (e.sportType && sportTypes.find(t => t.value === e.sportType)?.label.includes(lowerQuery))
-  ).slice(0, 3) // Return top 3 matches
+  )
+  
+  // Sort: In progress > Not Started (nearest first) > Finished (recent first)
+  results.sort((a, b) => {
+      const statusMap = { 'in_progress': 3, 'ongoing': 3, 'not_started': 2, 'finished': 1, 'completed': 1 }
+      const sA = statusMap[normalizeStatus(a.status)] || 0
+      const sB = statusMap[normalizeStatus(b.status)] || 0
+      if (sA !== sB) return sB - sA
+      
+      // If both finished, show recent first (desc)
+      if (sA === 1) return (b.timestamp || 0) - (a.timestamp || 0)
+      // If both future/ongoing, show nearest first (asc)
+      return (a.timestamp || 0) - (b.timestamp || 0)
+  })
+  
+  return results.slice(0, 3) 
+}
+
+const getMySubscriptionsTool = async () => {
+  // Ensure latest subscriptions
+  await fetchSubscribedEvents()
+  if (subscribedEvents.value.length === 0) return '您目前没有关注任何比赛。'
+  return subscribedEvents.value.map(e => ({
+    id: e.id,
+    name: `${e.eventName}: ${e.name}`,
+    time: e.time,
+    status: getStatusText(e.status)
+  }))
+}
+
+const setSportFilterTool = (type) => {
+  const validTypes = ['football', 'basketball', 'badminton', 'volleyball', 'all']
+  if (!validTypes.includes(type)) return false
+  
+  selectedSportType.value = type
+  if (activeTab.value !== 'all') {
+    activeTab.value = 'all' // Switch to list view to show results
+  }
+  filterEvents()
+  return true
+}
+
+
+
+const getStandingsTool = async (query) => {
+  console.log('[Kiwi] getStandingsTool called with query:', query)
+  if (!query) return null
+  
+  if (Object.keys(eventMap.value).length === 0) {
+    console.log('[Kiwi] eventMap is empty, fetching events...')
+    await fetchAllEvents()
+  }
+
+  const lowerQ = query.toLowerCase()
+  let targetEventId = null
+  let targetEventName = ''
+  
+  // Search in eventMap
+  for (const [id, name] of Object.entries(eventMap.value)) {
+    if (name.toLowerCase().includes(lowerQ)) {
+      targetEventId = id
+      targetEventName = name
+      console.log('[Kiwi] Found matching event:', name, 'ID:', id)
+      break
+    }
+  }
+  
+  if (!targetEventId) {
+    console.log('[Kiwi] No matching event found for:', query)
+    return null
+  }
+  
+  try {
+    const url = `/events/${targetEventId}/standings/overview`
+    console.log('[Kiwi] Fetching standings from:', url)
+    const res = await get(url)
+    console.log('[Kiwi] Standings API Response:', res)
+
+    if (res.code === 200 && res.data) {
+       return {
+         eventId: targetEventId,
+         eventName: targetEventName,
+         format_type: res.data.format_type,
+         data: res.data 
+       }
+    } else {
+       console.warn('[Kiwi] Standings API returned invalid data or non-200 code')
+    }
+  } catch (e) {
+    console.error('[Kiwi] Standings tool error', e)
+  }
+  return null
 }
 
 const selectedMonthStr = ref('')
@@ -1052,34 +1241,40 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
-          <div class="model-selector" ref="modelDropdownRef">
-            <div class="custom-select" :class="{ open: isModelDropdownOpen }">
-              <div class="select-trigger" @click="toggleModelDropdown">
-                <span class="selected-text">{{ selectedModel === 'pro' ? 'Gemini 3.0 Pro' : 'Gemini 3.0 Flash' }}</span>
-                <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="6 9 12 15 18 9"></polyline>
-                </svg>
-              </div>
-              <transition name="fade-slide">
-                <div class="options-list" v-if="isModelDropdownOpen">
-                  <div class="option-item" :class="{ selected: selectedModel === 'pro' }" @click="selectModel('pro')">
-                    <div class="option-content">
-                      <span class="option-title">Gemini 3.0 Pro</span>
-                      <span class="option-desc">推理能力更强</span>
-                    </div>
-                    <span v-if="selectedModel === 'pro'" class="check-icon">✓</span>
-                  </div>
-                  <div class="option-item" :class="{ selected: selectedModel === 'flash' }" @click="selectModel('flash')">
-                    <div class="option-content">
-                      <span class="option-title">Gemini 3.0 Flash</span>
-                      <span class="option-desc">响应速度更快</span>
-                    </div>
-                    <span v-if="selectedModel === 'flash'" class="check-icon">✓</span>
-                  </div>
+
+            <div class="header-actions" style="display: flex; gap: 8px; align-items: center;">
+             <button class="action-icon-btn" style="width: 32px; height: 32px;" @click="resetChat" title="重置对话">
+               <span style="font-size: 14px;">↺</span>
+             </button>
+             <div class="model-selector" ref="modelDropdownRef">
+              <div class="custom-select" :class="{ open: isModelDropdownOpen }">
+                <div class="select-trigger" @click="toggleModelDropdown">
+                  <span class="selected-text">{{ selectedModel === 'pro' ? 'Gemini 3.0 Pro' : 'Gemini 3.0 Flash' }}</span>
+                  <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
                 </div>
-              </transition>
+                <transition name="fade-slide">
+                  <div class="options-list" v-if="isModelDropdownOpen">
+                    <div class="option-item" :class="{ selected: selectedModel === 'pro' }" @click="selectModel('pro')">
+                      <div class="option-content">
+                        <span class="option-title">Gemini 3.0 Pro</span>
+                        <span class="option-desc">推理能力更强</span>
+                      </div>
+                      <span v-if="selectedModel === 'pro'" class="check-icon">✓</span>
+                    </div>
+                    <div class="option-item" :class="{ selected: selectedModel === 'flash' }" @click="selectModel('flash')">
+                      <div class="option-content">
+                        <span class="option-title">Gemini 3.0 Flash</span>
+                        <span class="option-desc">响应速度更快</span>
+                      </div>
+                      <span v-if="selectedModel === 'flash'" class="check-icon">✓</span>
+                    </div>
+                  </div>
+                </transition>
+              </div>
+             </div>
             </div>
-          </div>
         </div>
         
         <div class="chat-messages" ref="chatMessagesRef">
@@ -1126,10 +1321,51 @@ onUnmounted(() => {
                 </div>
               </div>
               
+              <!-- Standings Card -->
+              <div v-else-if="msg.type === 'standings-card'" class="standings-card">
+                 <div class="sc-header">
+                   <span class="sc-title">{{ msg.data.eventName }}</span>
+                   <span class="sc-tag">{{ msg.data.format_type === 'points' ? '积分赛' : '淘汰赛/混合' }}</span>
+                 </div>
+                 
+                 <div class="sc-content">
+                    <!-- Points Table -->
+                    <div v-if="msg.data.format_type === 'points' && msg.data.data.league" class="sc-table-wrapper">
+                       <table class="sc-table">
+                         <thead>
+                           <tr>
+                             <th>排名</th>
+                             <th>队伍</th>
+                             <th>积分</th>
+                           </tr>
+                         </thead>
+                         <tbody>
+                           <tr v-for="(team, i) in msg.data.data.league.slice(0, 5)" :key="i">
+                             <td><span class="sc-rank" :class="'rank-'+(team.rank||i+1)">{{ team.rank||i+1 }}</span></td>
+                             <td>{{ team.team_name }}</td>
+                             <td class="sc-points">{{ team.points }}</td>
+                           </tr>
+                         </tbody>
+                       </table>
+                       <div v-if="msg.data.data.league.length > 5" class="sc-more">...</div>
+                    </div>
+                    
+                    <!-- Knockout/Group Info -->
+                    <div v-else class="sc-info-block">
+                       <p>该赛事包含 {{ msg.data.data.groups ? '小组赛' : '' }} {{ msg.data.data.groups && msg.data.data.knockout_stages ? '+' : '' }} {{ msg.data.data.knockout_stages ? '淘汰赛' : '' }} 阶段。</p>
+                       <p class="sc-hint">赛制较复杂，建议查看详情图表。</p>
+                    </div>
+                 </div>
+                 
+                 <div class="sc-footer">
+                    <button class="sc-btn" @click="viewStandings({eventId: msg.data.eventId})">查看完整积分榜</button>
+                 </div>
+              </div>
+              
               <!-- Regenerate Button -->
               <div v-if="msg.role === 'assistant' && index === chatMessages.length - 1 && !isChatLoading" 
                    class="regenerate-actions">
-                 <button class="regenerate-btn" @click="regenerateResponse" title="重新生成">
+                 <button class="regenerate-btn" @click="regenerateResponse" title="重新生成" :disabled="index === 0">
                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                      <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
                    </svg>
@@ -3074,6 +3310,13 @@ onUnmounted(() => {
   color: var(--primary-color);
 }
 
+.regenerate-btn:disabled {
+  opacity: 0.3 !important;
+  cursor: not-allowed;
+  color: #ccc !important;
+  background: transparent !important;
+}
+
 
 .team-name-mini {
   font-size: 12px;
@@ -3111,6 +3354,120 @@ onUnmounted(() => {
   text-overflow: ellipsis;
 }
 
+/* Standings Card */
+.standings-card {
+  background: white;
+  border-radius: 16px;
+  padding: 16px;
+  width: 280px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  border: 1px solid rgba(0,0,0,0.05);
+  margin-top: 8px;
+}
+
+.sc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+  padding-bottom: 8px;
+}
+
+.sc-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.sc-tag {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: #e6f7ff;
+  color: #1890ff;
+  border-radius: 4px;
+}
+
+.sc-table {
+  width: 100%;
+  font-size: 12px;
+  border-collapse: collapse;
+}
+
+.sc-table th {
+  text-align: left;
+  color: var(--text-tertiary);
+  font-weight: 400;
+  padding-bottom: 4px;
+}
+
+.sc-table td {
+  padding: 4px 0;
+  color: var(--text-primary);
+}
+
+.sc-rank {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  text-align: center;
+  line-height: 16px;
+  border-radius: 50%;
+  background: #f0f0f0;
+  font-size: 10px;
+  color: #666;
+}
+
+.sc-rank.rank-1 { background: #fff1b8; color: #faad14; }
+.sc-rank.rank-2 { background: #e6f7ff; color: #1890ff; }
+.sc-rank.rank-3 { background: #fff0f6; color: #eb2f96; }
+
+.sc-points {
+  font-weight: 700;
+  text-align: right;
+}
+
+.sc-table th:last-child { text-align: right; }
+
+.sc-more {
+  text-align: center;
+  color: #ccc;
+  font-size: 12px;
+}
+
+.sc-info-block {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 8px 0;
+  line-height: 1.5;
+}
+
+.sc-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
+.sc-footer {
+  margin-top: 12px;
+}
+
+.sc-btn {
+  width: 100%;
+  padding: 8px;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sc-btn:hover {
+  background: var(--primary-active);
+}
 .empty-mini-state {
   text-align: center;
   padding: 30px;
